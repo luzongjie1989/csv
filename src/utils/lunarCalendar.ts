@@ -1,36 +1,54 @@
-/**
- * 公历日期转甲子历法（干支历）工具
- * 基于 lunar-javascript 库
- */
-
 import { Solar } from 'lunar-javascript';
 
 export interface GanZhiResult {
-  /** 年柱，如 "甲辰" */
   yearPillar: string;
-  /** 月柱，如 "丙寅" */
   monthPillar: string;
-  /** 日柱，如 "癸卯" */
   dayPillar: string;
-  /** 年生肖，如 "龙" */
   yearAnimal: string;
-  /** 完整甲子历法字符串 */
   fullGanZhi: string;
 }
 
 /**
- * 将公历日期字符串转换为甲子历法（干支历）
- * @param dateStr 日期字符串，支持多种格式：
- *   - "2024-01-15"
- *   - "2024/01/15"
- *   - "01/15/2024" (美式)
- *   - "1997/10/30" (中式)
- * @returns GanZhiResult | null 转换失败返回 null
+ * Parse date string in various formats
+ */
+function parseDateParts(dateStr: string): { year: number; month: number; day: number } | null {
+  const str = dateStr.trim();
+
+  // YYYY-MM-DD or YYYY/MM/DD (Chinese/ISO)
+  const isoMatch = str.match(/(\d{4})[\-/](\d{1,2})[\-/](\d{1,2})/);
+  if (isoMatch) {
+    return {
+      year: parseInt(isoMatch[1], 10),
+      month: parseInt(isoMatch[2], 10),
+      day: parseInt(isoMatch[3], 10),
+    };
+  }
+
+  // MM/DD/YYYY (US format like 03/17/1980)
+  const usMatch = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usMatch) {
+    return {
+      year: parseInt(usMatch[3], 10),
+      month: parseInt(usMatch[1], 10),
+      day: parseInt(usMatch[2], 10),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Convert solar date string to Gan-Zhi (Chinese sexagenary cycle) calendar
+ * @param dateStr Date string in various formats
+ * @returns GanZhiResult or null if conversion fails
  */
 export function solarToGanZhi(dateStr: string): GanZhiResult | null {
   try {
-    const { year, month, day } = parseDate(dateStr);
-    if (!year || !month || !day) return null;
+    const parts = parseDateParts(dateStr);
+    if (!parts) return null;
+
+    const { year, month, day } = parts;
+    if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return null;
 
     const solar = Solar.fromYmd(year, month, day);
     const lunar = solar.getLunar();
@@ -50,33 +68,4 @@ export function solarToGanZhi(dateStr: string): GanZhiResult | null {
   } catch {
     return null;
   }
-}
-
-/**
- * 解析多种日期格式
- */
-function parseDate(dateStr: string): { year: number; month: number; day: number } {
-  const str = dateStr.trim();
-
-  // 格式: YYYY-MM-DD 或 YYYY/MM/DD
-  const isoMatch = str.match(/(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})/);
-  if (isoMatch) {
-    return {
-      year: parseInt(isoMatch[1], 10),
-      month: parseInt(isoMatch[2], 10),
-      day: parseInt(isoMatch[3], 10),
-    };
-  }
-
-  // 格式: MM/DD/YYYY (美式)
-  const usMatch = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usMatch) {
-    return {
-      year: parseInt(usMatch[3], 10),
-      month: parseInt(usMatch[1], 10),
-      day: parseInt(usMatch[2], 10),
-    };
-  }
-
-  return { year: 0, month: 0, day: 0 };
 }

@@ -14,7 +14,6 @@ export interface ParsedCSV {
   detectedFormat: 'american' | 'chinese' | 'unknown';
   dateColumn?: string;
   closeColumn?: string;
-  // 每行的干支信息（key 为行索引）
   ganZhiMap?: Map<number, GanZhiInfo>;
 }
 
