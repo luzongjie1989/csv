@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BarChart3, Upload, Table2, PieChart } from 'lucide-react';
+import { BarChart3, Upload, Table2, PieChart, BarChart4 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
@@ -7,10 +7,11 @@ import DataCards from '@/components/DataCards';
 import CSVTable from '@/components/CSVTable';
 import CSVChart from '@/components/CSVChart';
 import StatisticsPanel from '@/components/StatisticsPanel';
+import GanZhiChart from '@/components/GanZhiChart';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
 
-type ViewTab = 'preview' | 'statistics';
+type ViewTab = 'preview' | 'statistics' | 'ganzhi';
 
 export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
@@ -148,10 +149,22 @@ export default function App() {
                       <PieChart className="w-4 h-4" />
                       统计分析
                     </button>
+                    <button
+                      onClick={() => setViewTab('ganzhi')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        viewTab === 'ganzhi'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
+                      }`}
+                    >
+                      <BarChart4 className="w-4 h-4" />
+                      干支图表
+                    </button>
                   </div>
 
                   {viewTab === 'preview' && <CSVTable data={uploadedFile.data} />}
                   {viewTab === 'statistics' && <StatisticsPanel data={uploadedFile.data} />}
+                  {viewTab === 'ganzhi' && <GanZhiChart data={uploadedFile.data} />}
 
                   {/* Upload another file */}
                   <div className="flex justify-center pt-4">
