@@ -1,13 +1,16 @@
 import { useState, useCallback } from 'react';
-import { BarChart3, Upload } from 'lucide-react';
+import { BarChart3, Upload, Table2, PieChart } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
 import DataCards from '@/components/DataCards';
 import CSVTable from '@/components/CSVTable';
 import CSVChart from '@/components/CSVChart';
+import StatisticsPanel from '@/components/StatisticsPanel';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
+
+type ViewTab = 'preview' | 'statistics';
 
 export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
@@ -45,6 +48,7 @@ export default function App() {
   }, [onFileSelect]);
 
   const isStockData = uploadedFile?.data?.closeColumn != null;
+  const [viewTab, setViewTab] = useState<ViewTab>('preview');
 
   return (
     <div className="min-h-[100dvh] bg-slate-900">
@@ -120,7 +124,34 @@ export default function App() {
 
                   {isStockData && <CSVChart data={uploadedFile.data} />}
 
-                  <CSVTable data={uploadedFile.data} />
+                  {/* Tab Switcher */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setViewTab('preview')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        viewTab === 'preview'
+                          ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
+                      }`}
+                    >
+                      <Table2 className="w-4 h-4" />
+                      数据预览
+                    </button>
+                    <button
+                      onClick={() => setViewTab('statistics')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        viewTab === 'statistics'
+                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
+                      }`}
+                    >
+                      <PieChart className="w-4 h-4" />
+                      统计分析
+                    </button>
+                  </div>
+
+                  {viewTab === 'preview' && <CSVTable data={uploadedFile.data} />}
+                  {viewTab === 'statistics' && <StatisticsPanel data={uploadedFile.data} />}
 
                   {/* Upload another file */}
                   <div className="flex justify-center pt-4">
