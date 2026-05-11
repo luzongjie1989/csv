@@ -18,11 +18,11 @@ export const SOLAR_TERM_24 = [
   '立冬', '小雪', '大雪', '冬至', '小寒', '大寒',
 ] as const;
 
-/** 单个分组统计结果 */
+/** 单次出现统计 */
 export interface GroupStat {
   label: string;
   count: number;
-  avgReturn: number;
+  avgLogReturn: number;
 }
 
 /** 完整统计报告 */
@@ -33,33 +33,15 @@ export interface StatsReport {
   solarTerm: GroupStat[];
 }
 
-/** 计算简单日度收益率: r = (P_t - P_{t-1}) / P_{t-1} */
-function calcSimpleReturns(closes: number[]): (number | null)[] {
-  const result: (number | null)[] = [];
-  result.push(null);
-  for (let i = 1; i < closes.length; i++) {
-    if (closes[i] > 0 && closes[i - 1] > 0) {
-      result.push((closes[i] - closes[i - 1]) / closes[i - 1]);
-    } else {
-      result.push(null);
-    }
-  }
-  return result;
-}
-
 /** 对数组求平均 */
 function avg(arr: number[]): number {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 /**
- * 从ParsedCSV生成统计报告
- * 按年柱/月柱/日柱/节气分组，计算每组收益率平均值
+ * 从数据中提取有效收盘价和索引
  */
-export function generateStatsReport(data: ParsedCSV): StatsReport | null {
-  if (!data.closeColumn) return null;
-
-  // 提取有效收盘价和原始行索引
+function extractCloses(data: ParsedCSV): { closes: number[]; indices: number[] } {
   const closes: number[] = [];
   const indices: number[] = [];
   data.rows.forEach((row, idx) => {
@@ -69,62 +51,144 @@ export function generateStatsReport(data: ParsedCSV): StatsReport | null {
       indices.push(idx);
     }
   });
+  return { closes, indices };
+}
 
-  if (closes.length < 2) return null;
+/**
+ * 找到连续段：按keyFn分组，连续的相同key为一组
+ * 返回 Map<key, {firstClose, lastClose}[]>
+ */
+function findSegments(
+  indices: number[],
+  closes: number[],
+  keyFn: (rowIdx: number) => string | undefined
+): Map<string, { first: number; last: number }[]> {
+  const groups = new Map<string, { first: number; last: number }[]>();
 
-  // 日度简单收益率
-  const returns = calcSimpleReturns(closes);
-
-  // 按分组收集收益率
-  const yMap = new Map<string, number[]>();
-  const mMap = new Map<string, number[]>();
-  const dMap = new Map<string, number[]>();
-  const sMap = new Map<string, number[]>();
+  let currentKey: string | undefined;
 
   indices.forEach((origIdx, i) => {
-    const ret = returns[i];
-    if (ret === null) return;
+    const key = keyFn(origIdx);
+    const close = closes[i];
 
-    const gz = data.ganZhiMap?.get(origIdx);
-    const st = data.solarTermMap?.get(origIdx);
+    if (!key) return;
 
-    if (gz?.yearPillar) {
-      if (!yMap.has(gz.yearPillar)) yMap.set(gz.yearPillar, []);
-      yMap.get(gz.yearPillar)!.push(ret);
+    if (key !== currentKey) {
+      // 新段开始
+      currentKey = key;
     }
-    if (gz?.monthPillar) {
-      if (!mMap.has(gz.monthPillar)) mMap.set(gz.monthPillar, []);
-      mMap.get(gz.monthPillar)!.push(ret);
-    }
-    if (gz?.dayPillar) {
-      if (!dMap.has(gz.dayPillar)) dMap.set(gz.dayPillar, []);
-      dMap.get(gz.dayPillar)!.push(ret);
-    }
-    if (st?.name) {
-      if (!sMap.has(st.name)) sMap.set(st.name, []);
-      sMap.get(st.name)!.push(ret);
+
+    // 每行都更新last，遍历完后就是该段的最后一个
+    if (!groups.has(key)) groups.set(key, []);
+    const arr = groups.get(key)!;
+
+    // 如果是该段的第一个元素，或者key变化了（上面已处理），创建新段
+    if (arr.length === 0 || (i > 0 && keyFn(indices[i - 1]) !== key)) {
+      arr.push({ first: close, last: close });
+    } else {
+      // 更新最后一段的last
+      arr[arr.length - 1].last = close;
     }
   });
 
-  // 按固定顺序构建结果，无数据留空（avgReturn=0, count=0）
+  return groups;
+}
+
+/**
+ * 日柱统计：单日对数收益率
+ * 对同一日柱的所有出现，计算 ln(P_t / P_{t-1}) 然后取平均
+ */
+function calcDayPillarStats(data: ParsedCSV, closes: number[], indices: number[]): Map<string, number[]> {
+  const groups = new Map<string, number[]>();
+
+  indices.forEach((origIdx, i) => {
+    if (i === 0) return; // 第一行无前一日
+    const gz = data.ganZhiMap?.get(origIdx);
+    if (!gz?.dayPillar) return;
+    if (closes[i] <= 0 || closes[i - 1] <= 0) return;
+
+    const logReturn = Math.log(closes[i] / closes[i - 1]);
+    if (!groups.has(gz.dayPillar)) groups.set(gz.dayPillar, []);
+    groups.get(gz.dayPillar)!.push(logReturn);
+  });
+
+  return groups;
+}
+
+/**
+ * 生成统计报告
+ *
+ * 核心逻辑：
+ * - 年柱：找到每年柱的每次连续出现，算 ln(末日/首日)，多次出现取平均
+ * - 月柱：找到每月柱的每次连续出现，算 ln(末日/首日)，多次出现取平均
+ * - 日柱：每个日柱出现日的单日对数收益率 ln(P_t/P_{t-1})，取平均
+ * - 节气：找到每个节气的每次连续出现，算 ln(末日/首日)，多次出现取平均
+ */
+export function generateStatsReport(data: ParsedCSV): StatsReport | null {
+  if (!data.closeColumn) return null;
+
+  const { closes, indices } = extractCloses(data);
+  if (closes.length < 2) return null;
+
+  // ===== 年柱：连续段首尾对数收益率 =====
+  const yearSegments = findSegments(indices, closes, (idx) => data.ganZhiMap?.get(idx)?.yearPillar);
+  const yearLogReturns = new Map<string, number[]>();
+  yearSegments.forEach((segs, key) => {
+    yearLogReturns.set(key, segs.map(s => Math.log(s.last / s.first)));
+  });
+
+  // ===== 月柱：连续段首尾对数收益率 =====
+  const monthSegments = findSegments(indices, closes, (idx) => data.ganZhiMap?.get(idx)?.monthPillar);
+  const monthLogReturns = new Map<string, number[]>();
+  monthSegments.forEach((segs, key) => {
+    monthLogReturns.set(key, segs.map(s => Math.log(s.last / s.first)));
+  });
+
+  // ===== 日柱：单日对数收益率 =====
+  const dayLogReturns = calcDayPillarStats(data, closes, indices);
+
+  // ===== 节气：连续段首尾对数收益率 =====
+  const termSegments = findSegments(indices, closes, (idx) => data.solarTermMap?.get(idx)?.name);
+  const termLogReturns = new Map<string, number[]>();
+  termSegments.forEach((segs, key) => {
+    termLogReturns.set(key, segs.map(s => Math.log(s.last / s.first)));
+  });
+
+  // 构建固定顺序的结果
   const yearPillar = JIAZI_60.map(jz => {
-    const vals = yMap.get(jz);
-    return { label: jz, count: vals?.length || 0, avgReturn: vals ? avg(vals) : 0 };
+    const vals = yearLogReturns.get(jz);
+    return {
+      label: jz,
+      count: vals?.length || 0,
+      avgLogReturn: vals ? avg(vals) : 0,
+    };
   });
 
   const monthPillar = JIAZI_60.map(jz => {
-    const vals = mMap.get(jz);
-    return { label: jz, count: vals?.length || 0, avgReturn: vals ? avg(vals) : 0 };
+    const vals = monthLogReturns.get(jz);
+    return {
+      label: jz,
+      count: vals?.length || 0,
+      avgLogReturn: vals ? avg(vals) : 0,
+    };
   });
 
   const dayPillar = JIAZI_60.map(jz => {
-    const vals = dMap.get(jz);
-    return { label: jz, count: vals?.length || 0, avgReturn: vals ? avg(vals) : 0 };
+    const vals = dayLogReturns.get(jz);
+    return {
+      label: jz,
+      count: vals?.length || 0,
+      avgLogReturn: vals ? avg(vals) : 0,
+    };
   });
 
   const solarTerm = SOLAR_TERM_24.map(st => {
-    const vals = sMap.get(st);
-    return { label: st, count: vals?.length || 0, avgReturn: vals ? avg(vals) : 0 };
+    const vals = termLogReturns.get(st);
+    return {
+      label: st,
+      count: vals?.length || 0,
+      avgLogReturn: vals ? avg(vals) : 0,
+    };
   });
 
   return { yearPillar, monthPillar, dayPillar, solarTerm };

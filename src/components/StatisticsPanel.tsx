@@ -65,7 +65,7 @@ export default function StatisticsPanel({ data }: Props) {
         <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-px bg-slate-700/30">
           {stats.map(stat => {
             const hasData = stat.count > 0;
-            const isPositive = stat.avgReturn > 0;
+            const isPositive = stat.avgLogReturn > 0;
 
             return (
               <div
@@ -85,7 +85,7 @@ export default function StatisticsPanel({ data }: Props) {
                 <div className={`text-xs font-semibold ${
                   hasData ? (isPositive ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'
                 }`}>
-                  {fmtPct(stat.avgReturn)}
+                  {fmtPct(stat.avgLogReturn)}
                 </div>
 
                 {/* Count */}
