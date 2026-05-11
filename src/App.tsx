@@ -1,10 +1,143 @@
-import { Routes, Route } from 'react-router'
-import Home from './pages/Home'
+import { useState, useCallback } from 'react';
+import { BarChart3, Upload } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import UploadZone from '@/components/UploadZone';
+import ImagePreview from '@/components/ImagePreview';
+import DataCards from '@/components/DataCards';
+import CSVTable from '@/components/CSVTable';
+import CSVChart from '@/components/CSVChart';
+import { useCSVParser } from '@/hooks/useCSVParser';
+import type { UploadedFile } from '@/types';
 
 export default function App() {
+  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const { handleFileUpload } = useCSVParser();
+
+  const onFileSelect = useCallback(async (file: File) => {
+    setIsUploading(true);
+    try {
+      const result = await handleFileUpload(file);
+      setUploadedFile(result);
+    } catch (err) {
+      console.error('上传失败:', err);
+      alert('文件处理失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    } finally {
+      setIsUploading(false);
+    }
+  }, [handleFileUpload]);
+
+  const handleClear = useCallback(() => {
+    setUploadedFile(null);
+  }, []);
+
+  const handleHeaderUpload = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.png,.jpg,.jpeg';
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files && files.length > 0) {
+        onFileSelect(files[0]);
+      }
+    };
+    input.click();
+  }, [onFileSelect]);
+
+  const isStockData = uploadedFile?.data?.closeColumn != null;
+
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-    </Routes>
-  )
+    <div className="min-h-[100dvh] bg-slate-900">
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-cyan-400" />
+            </div>
+            <h1 className="text-white font-semibold text-lg tracking-tight">
+              数据分析与预览工具
+            </h1>
+          </div>
+          <button
+            onClick={handleHeaderUpload}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-sm font-medium transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            <span className="hidden sm:inline">上传文件</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Upload Zone */}
+        <AnimatePresence mode="wait">
+          {!uploadedFile && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <UploadZone onFileSelect={onFileSelect} />
+              {isUploading && (
+                <div className="mt-4 text-center">
+                  <div className="inline-flex items-center gap-2 text-cyan-400 text-sm">
+                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                    正在处理文件...
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Preview Content */}
+        <AnimatePresence>
+          {uploadedFile && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-6"
+            >
+              {/* Image Preview */}
+              {uploadedFile.type === 'image' && uploadedFile.imageUrl && (
+                <ImagePreview
+                  fileName={uploadedFile.file.name}
+                  fileSize={uploadedFile.file.size}
+                  imageUrl={uploadedFile.imageUrl}
+                  onClear={handleClear}
+                />
+              )}
+
+              {/* CSV Preview */}
+              {uploadedFile.type === 'csv' && uploadedFile.data && (
+                <div className="space-y-6">
+                  <DataCards data={uploadedFile.data} />
+
+                  {isStockData && <CSVChart data={uploadedFile.data} />}
+
+                  <CSVTable data={uploadedFile.data} />
+
+                  {/* Upload another file */}
+                  <div className="flex justify-center pt-4">
+                    <button
+                      onClick={handleClear}
+                      className="flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 text-sm font-medium transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                      上传其他文件
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+    </div>
+  );
 }
