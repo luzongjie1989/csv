@@ -1,5 +1,6 @@
-import { Table2, Columns3, Rows3, CalendarRange } from 'lucide-react';
+import { Table2, Columns3, Rows3, CalendarRange, Sun } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { getSolarTermColor } from '@/utils/solarTerms';
 import type { ParsedCSV } from '@/types';
 
 interface DataCardsProps {
@@ -7,9 +8,9 @@ interface DataCardsProps {
 }
 
 export default function DataCards({ data }: DataCardsProps) {
-  const { rowCount, columnCount, dateColumn, rows, detectedFormat, ganZhiMap } = data;
+  const { rowCount, columnCount, dateColumn, rows, detectedFormat, ganZhiMap, solarTermMap } = data;
 
-  // Calculate date range if date column exists
+  // Calculate date range
   let dateRange = '-';
   if (dateColumn && rows.length > 0) {
     const dates = rows
@@ -20,13 +21,17 @@ export default function DataCards({ data }: DataCardsProps) {
     }
   }
 
-  // Get first and last GanZhi info for display
-  let firstGanZhi = ganZhiMap?.size ? ganZhiMap.get(0) : undefined;
-  let lastGanZhi: import('@/types').GanZhiInfo | undefined;
-  if (ganZhiMap && ganZhiMap.size > 0) {
-    const lastIdx = rows.length - 1;
-    lastGanZhi = ganZhiMap.get(lastIdx);
-  }
+  // Get GanZhi info
+  const firstGanZhi = ganZhiMap?.size ? ganZhiMap.get(0) : undefined;
+  let lastGanZhi = ganZhiMap?.size ? ganZhiMap.get(rows.length - 1) : undefined;
+
+  // Get Solar Term info
+  const firstSolarTerm = solarTermMap?.size ? solarTermMap.get(0) : undefined;
+  let lastSolarTerm = solarTermMap?.size ? solarTermMap.get(rows.length - 1) : undefined;
+
+  // Count how many unique solar terms are covered
+  const uniqueTerms = new Set<string>();
+  solarTermMap?.forEach((term) => uniqueTerms.add(term.name));
 
   const formatLabel = detectedFormat === 'american'
     ? '美式格式'
@@ -83,7 +88,49 @@ export default function DataCards({ data }: DataCardsProps) {
         ))}
       </div>
 
-      {/* 干支历法信息 */}
+      {/* Solar Term Info Card */}
+      {solarTermMap && solarTermMap.size > 0 && firstSolarTerm && (
+        <Card className="bg-gradient-to-br from-emerald-950/40 to-slate-800 border-emerald-700/30">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Sun className="w-4 h-4 text-emerald-400" />
+              <p className="text-emerald-300 text-sm font-medium">24节气信息</p>
+              <span className="text-emerald-500/50 text-xs ml-1">({uniqueTerms.size} 个节气)</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <p className="text-slate-500 text-xs mb-1">起始节气区间</p>
+                <SolarTermDisplay term={firstSolarTerm} />
+              </div>
+              {lastSolarTerm && (
+                <div>
+                  <p className="text-slate-500 text-xs mb-1">结束节气区间</p>
+                  <SolarTermDisplay term={lastSolarTerm} />
+                </div>
+              )}
+            </div>
+            {/* Unique terms tags */}
+            <div className="mt-3 pt-3 border-t border-emerald-800/30">
+              <p className="text-slate-500 text-xs mb-2">涉及节气</p>
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from(uniqueTerms).map(termName => {
+                  const colors = getSolarTermColor(termName);
+                  return (
+                    <span
+                      key={termName}
+                      className={`inline-block px-2 py-0.5 rounded text-xs ${colors.bg} ${colors.text}`}
+                    >
+                      {termName}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* GanZhi Info Card */}
       {ganZhiMap && ganZhiMap.size > 0 && firstGanZhi && (
         <Card className="bg-gradient-to-br from-amber-950/40 to-slate-800 border-amber-700/30">
           <CardContent className="p-4">
@@ -102,6 +149,19 @@ export default function DataCards({ data }: DataCardsProps) {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+/** Display a single solar term with seasonal styling */
+function SolarTermDisplay({ term }: { term: { name: string; dateStr: string; isJie: boolean; isQi: boolean } }) {
+  const colors = getSolarTermColor(term.name);
+  const typeLabel = term.isJie ? '节' : term.isQi ? '气' : '';
+  return (
+    <div className={`inline-flex items-center gap-2 px-2 py-1 rounded ${colors.bg} ${colors.text}`}>
+      <span className="text-sm font-medium">{term.name}</span>
+      <span className="text-[10px] opacity-60 border border-current px-1 rounded">{typeLabel}</span>
+      <span className="text-xs opacity-70">{term.dateStr}</span>
     </div>
   );
 }

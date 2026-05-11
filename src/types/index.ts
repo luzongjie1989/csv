@@ -6,6 +6,16 @@ export interface GanZhiInfo {
   fullGanZhi: string;
 }
 
+export interface SolarTermInfo {
+  name: string;
+  year: number;
+  month: number;
+  day: number;
+  dateStr: string;
+  isJie: boolean;
+  isQi: boolean;
+}
+
 export interface ParsedCSV {
   headers: string[];
   rows: Record<string, string>[];
@@ -15,6 +25,7 @@ export interface ParsedCSV {
   dateColumn?: string;
   closeColumn?: string;
   ganZhiMap?: Map<number, GanZhiInfo>;
+  solarTermMap?: Map<number, SolarTermInfo>;
 }
 
 export interface UploadedFile {
