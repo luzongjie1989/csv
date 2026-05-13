@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { fmtPct } from '@/utils/statistics';
 import { getSolarTermColor } from '@/utils/solarTerms';
-import { Solar } from 'lunar-javascript';
+import { Solar, LunarYear } from 'lunar-javascript';
 import type { ParsedCSV } from '@/types';
 
 interface Props { data: ParsedCSV; }
@@ -171,6 +171,38 @@ function getYearGanZhi(year: number) {
   catch { return null; }
 }
 
+/** 计算月柱对应的阳历日期范围（精确到农历月起止） */
+function getMonthPillarRange(year: number, month: number): { start: string; end: string } | null {
+  try {
+    // 用该月15日获取对应的农历
+    const solar = Solar.fromYmd(year, month, 15);
+    const lunar = solar.getLunar();
+    const lunarYear = lunar.getYear();
+    const lunarMonthNum = lunar.getMonth();
+
+    // 获取农历年的所有月份
+    const lunarYearObj = LunarYear.fromYear(lunarYear);
+    const months = lunarYearObj.getMonthsInYear() as any[];
+
+    for (const lm of months) {
+      if (lm.getMonth() === lunarMonthNum) {
+        const startJd = lm.getFirstJulianDay();
+        const dayCount = lm.getDayCount();
+        const endJd = startJd + dayCount - 1;
+
+        const startSolar = Solar.fromJulianDay(startJd);
+        const endSolar = Solar.fromJulianDay(endJd);
+
+        return {
+          start: `${startSolar.getYear()}-${String(startSolar.getMonth()).padStart(2, '0')}-${String(startSolar.getDay()).padStart(2, '0')}`,
+          end: `${endSolar.getYear()}-${String(endSolar.getMonth()).padStart(2, '0')}-${String(endSolar.getDay()).padStart(2, '0')}`,
+        };
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
 export default function PredictionPanel({ data }: Props) {
   const current = useMemo(() => getCurrentGanZhi(), []);
 
@@ -190,10 +222,11 @@ export default function PredictionPanel({ data }: Props) {
     return predictMonths.map(({ year, month, label }) => {
       const pillar = getMonthPillar(year, month);
       const pred = pillar ? predictPillar(data, idx => data.ganZhiMap?.get(idx)?.monthPillar, pillar) : null;
+      const range = getMonthPillarRange(year, month);
       const isCurrent = current?.monthPillar === pillar && current?.month === month && current?.year === year;
       return {
         name: label, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0,
-        hasData: !!pred, pillar: pillar || '-', isCurrent, year, month,
+        hasData: !!pred, pillar: pillar || '-', isCurrent, year, month, range,
       };
     });
   }, [data, predictMonths, current]);
@@ -346,16 +379,26 @@ export default function PredictionPanel({ data }: Props) {
   );
 }
 
-/** 月柱Tooltip */
+/** 月柱Tooltip（含阳历日期范围） */
 function MonthTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
-  if (!d.hasData) return null;
   return (
-    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
+    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl min-w-[160px]">
       <p className="text-white text-sm font-medium">{d.name} ({d.pillar}) {d.isCurrent && <span className="text-purple-400">← 当前</span>}</p>
-      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
-      <p className="text-slate-500 text-xs">n={d.count}</p>
+      {d.range && (
+        <p className="text-amber-300 text-xs mt-0.5">
+          {d.range.start} ~ {d.range.end}
+        </p>
+      )}
+      {d.hasData ? (
+        <>
+          <p className={`text-xs font-semibold mt-1 ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
+          <p className="text-slate-500 text-xs">n={d.count}</p>
+        </>
+      ) : (
+        <p className="text-slate-500 text-xs mt-1">无历史数据</p>
+      )}
     </div>
   );
 }

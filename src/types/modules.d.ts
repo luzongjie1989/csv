@@ -12,22 +12,30 @@ declare module 'lunar-javascript' {
   }
 
   export class Lunar {
+    getYear(): number;
+    getMonth(): number;
+    getDay(): number;
     getYearInGanZhi(): string;
     getMonthInGanZhi(): string;
     getDayInGanZhi(): string;
     getYearShengXiao(): string;
-    /** Get solar term table: keys are term names, values are Solar objects */
     getJieQiTable(): Record<string, any>;
-    /** Get ordered list of solar term names */
     getJieQiList(): string[];
-    /** Get current solar term name for this day */
     getJieQi(): string;
-    /** Get previous solar term */
     getPrevJieQi(wholeDay?: boolean): any;
-    /** Get next solar term */
     getNextJieQi(wholeDay?: boolean): any;
-    /** Get current solar term as JieQi object */
     getCurrentJieQi(): any | null;
+  }
+
+  export class LunarYear {
+    static fromYear(year: number): LunarYear;
+    getMonthsInYear(): LunarMonth[];
+  }
+
+  export class LunarMonth {
+    getMonth(): number;
+    getDayCount(): number;
+    getFirstJulianDay(): number;
   }
 }
 

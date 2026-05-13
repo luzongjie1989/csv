@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BarChart3, Upload, Table2, PieChart, BarChart4 } from 'lucide-react';
+import { BarChart3, Upload, Table2, ScrollText } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
@@ -12,7 +12,7 @@ import PredictionPanel from '@/components/PredictionPanel';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
 
-type ViewTab = 'preview' | 'statistics' | 'ganzhi';
+type ViewTab = 'preview' | 'classical';
 
 export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
@@ -119,13 +119,10 @@ export default function App() {
                 />
               )}
 
-              {/* CSV Preview */}
+              {/* CSV Content */}
               {uploadedFile.type === 'csv' && uploadedFile.data && (
                 <div className="space-y-6">
                   <DataCards data={uploadedFile.data} />
-
-                  {isStockData && <CSVChart data={uploadedFile.data} />}
-                  {isStockData && <PredictionPanel data={uploadedFile.data} />}
 
                   {/* Tab Switcher */}
                   <div className="flex gap-2">
@@ -141,32 +138,34 @@ export default function App() {
                       数据预览
                     </button>
                     <button
-                      onClick={() => setViewTab('statistics')}
+                      onClick={() => setViewTab('classical')}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        viewTab === 'statistics'
+                        viewTab === 'classical'
                           ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
                       }`}
                     >
-                      <PieChart className="w-4 h-4" />
-                      统计分析
-                    </button>
-                    <button
-                      onClick={() => setViewTab('ganzhi')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        viewTab === 'ganzhi'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
-                      }`}
-                    >
-                      <BarChart4 className="w-4 h-4" />
-                      干支图表
+                      <ScrollText className="w-4 h-4" />
+                      古典历法分析
                     </button>
                   </div>
 
-                  {viewTab === 'preview' && <CSVTable data={uploadedFile.data} />}
-                  {viewTab === 'statistics' && <StatisticsPanel data={uploadedFile.data} />}
-                  {viewTab === 'ganzhi' && <GanZhiChart data={uploadedFile.data} />}
+                  {/* 数据预览标签页 */}
+                  {viewTab === 'preview' && (
+                    <div className="space-y-6">
+                      <CSVTable data={uploadedFile.data} />
+                    </div>
+                  )}
+
+                  {/* 古典历法分析标签页 */}
+                  {viewTab === 'classical' && (
+                    <div className="space-y-8">
+                      {isStockData && <CSVChart data={uploadedFile.data} />}
+                      {isStockData && <PredictionPanel data={uploadedFile.data} />}
+                      <StatisticsPanel data={uploadedFile.data} />
+                      <GanZhiChart data={uploadedFile.data} />
+                    </div>
+                  )}
 
                   {/* Upload another file */}
                   <div className="flex justify-center pt-4">
