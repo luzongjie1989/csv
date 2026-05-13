@@ -1,146 +1,96 @@
 import { useMemo } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
-} from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { fmtPct } from '@/utils/statistics';
 import { getSolarTermColor } from '@/utils/solarTerms';
 import { Solar } from 'lunar-javascript';
 import type { ParsedCSV } from '@/types';
 
-interface Props {
-  data: ParsedCSV;
-}
+interface Props { data: ParsedCSV; }
 
-/** 连续段 */
-interface Segment {
-  first: number;
-  last: number;
-}
-
-/** 找到指定key的所有连续段 */
-function findSegmentsForKey(
-  indices: number[],
-  closes: number[],
-  keyFn: (rowIdx: number) => string | undefined,
-  targetKey: string
-): Segment[] {
-  const segs: Segment[] = [];
-  let inSegment = false;
-
-  indices.forEach((origIdx, i) => {
-    const key = keyFn(origIdx);
-    const close = closes[i];
-
-    if (key === targetKey) {
-      if (!inSegment) {
-        segs.push({ first: close, last: close });
-        inSegment = true;
-      } else {
-        segs[segs.length - 1].last = close;
-      }
-    } else {
-      inSegment = false;
-    }
-  });
-
-  return segs;
-}
-
-/** 计算预测值：找到历史同柱的所有连续段，算ln(末日/首日)取平均 */
 function predictPillar(
   data: ParsedCSV,
-  pillarFn: (idx: number) => string | undefined,
-  targetPillar: string
+  keyFn: (idx: number) => string | undefined,
+  target: string
 ): { count: number; avgReturn: number } | null {
   if (!data.closeColumn) return null;
-
   const closes: number[] = [];
   const indices: number[] = [];
   data.rows.forEach((row, idx) => {
     const v = parseFloat(row[data.closeColumn!] || '');
-    if (!isNaN(v) && v > 0) {
-      closes.push(v);
-      indices.push(idx);
-    }
+    if (!isNaN(v) && v > 0) { closes.push(v); indices.push(idx); }
   });
-
   if (closes.length < 2) return null;
 
-  const segs = findSegmentsForKey(indices, closes, pillarFn, targetPillar);
+  // 找到target的所有连续段
+  const segs: { first: number; last: number }[] = [];
+  let inSeg = false;
+  indices.forEach((origIdx, i) => {
+    const key = keyFn(origIdx);
+    if (key === target) {
+      if (!inSeg) { segs.push({ first: closes[i], last: closes[i] }); inSeg = true; }
+      else { segs[segs.length - 1].last = closes[i]; }
+    } else { inSeg = false; }
+  });
   if (segs.length === 0) return null;
-
-  const returns = segs.map(s => Math.log(s.last / s.first));
-  const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
-
-  return { count: segs.length, avgReturn: avg };
+  const rets = segs.map(s => Math.log(s.last / s.first));
+  return { count: segs.length, avgReturn: rets.reduce((a, b) => a + b, 0) / rets.length };
 }
 
-/** 获取指定年份的干支信息 */
-function getYearGanZhi(year: number): { yearPillar: string; gan: string; zhi: string } | null {
+function getYearGanZhi(year: number) {
+  try { const s = Solar.fromYmd(year, 6, 1).getLunar(); const p = s.getYearInGanZhi(); return { yearPillar: p, gan: p[0], zhi: p[1] }; }
+  catch { return null; }
+}
+
+function getMonthPillar(year: number, month: number) {
+  try { return Solar.fromYmd(year, month, 15).getLunar().getMonthInGanZhi(); }
+  catch { return null; }
+}
+
+function getYearSolarTerms(year: number) {
   try {
-    const solar = Solar.fromYmd(year, 6, 1);
-    const lunar = solar.getLunar();
-    const pillar = lunar.getYearInGanZhi();
-    return { yearPillar: pillar, gan: pillar[0], zhi: pillar[1] };
-  } catch {
-    return null;
-  }
-}
-
-/** 获取指定年月月柱 */
-function getMonthGanZhi(year: number, month: number): string | null {
-  try {
-    const solar = Solar.fromYmd(year, month, 15);
-    const lunar = solar.getLunar();
-    return lunar.getMonthInGanZhi();
-  } catch {
-    return null;
-  }
-}
-
-/** 2026年月柱列表 */
-function get2026Months(): { month: number; pillar: string }[] {
-  const months: { month: number; pillar: string }[] = [];
-  for (let m = 1; m <= 12; m++) {
-    const p = getMonthGanZhi(2026, m);
-    if (p) months.push({ month: m, pillar: p });
-  }
-  return months;
-}
-
-/** 2026年节气列表 */
-function get2026SolarTerms(): { name: string; dateStr: string }[] {
-  try {
-    const solar = Solar.fromYmd(2026, 6, 1);
-    const lunar = solar.getLunar();
-    const table = lunar.getJieQiTable() as Record<string, any>;
-    const list = lunar.getJieQiList() as string[];
-
-    const result: { name: string; dateStr: string }[] = [];
-    const skipSet = new Set(['DA_XUE', 'DONG_ZHI', 'XIAO_HAN', 'DA_HAN', 'LI_CHUN', 'YU_SHUI', 'JING_ZHE']);
-
-    for (const name of list) {
-      if (skipSet.has(name)) continue;
-      const s = table[name];
-      if (!s) continue;
-      if (s.getYear() === 2026) {
-        result.push({
-          name,
-          dateStr: `${s.getYear()}-${String(s.getMonth()).padStart(2, '0')}-${String(s.getDay()).padStart(2, '0')}`,
-        });
-      }
+    const table = Solar.fromYmd(year, 6, 1).getLunar().getJieQiTable() as Record<string, any>;
+    const list = Solar.fromYmd(year, 6, 1).getLunar().getJieQiList() as string[];
+    const skip = new Set(['DA_XUE','DONG_ZHI','XIAO_HAN','DA_HAN','LI_CHUN','YU_SHUI','JING_ZHE']);
+    const res: { name: string; month: number; day: number }[] = [];
+    for (const n of list) {
+      if (skip.has(n)) continue;
+      const s = table[n]; if (!s) continue;
+      if (s.getYear() === year) res.push({ name: n, month: s.getMonth(), day: s.getDay() });
     }
-
-    result.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
-    return result;
-  } catch {
-    return [];
-  }
+    return res.sort((a, b) => a.month !== b.month ? a.month - b.month : a.day - b.day);
+  } catch { return []; }
 }
 
 export default function PredictionPanel({ data }: Props) {
   const yearInfo = useMemo(() => getYearGanZhi(2026), []);
+
+  // 月柱预测
+  const monthChartData = useMemo(() => {
+    const items: { name: string; value: number; count: number; hasData: boolean; pillar: string }[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const pillar = getMonthPillar(2026, m);
+      if (!pillar) continue;
+      const pred = pillar ? predictPillar(data, idx => data.ganZhiMap?.get(idx)?.monthPillar, pillar) : null;
+      items.push({
+        name: `${m}月`, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0,
+        hasData: !!pred, pillar,
+      });
+    }
+    return items;
+  }, [data]);
+
+  // 节气预测
+  const termChartData = useMemo(() => {
+    const terms = getYearSolarTerms(2026);
+    return terms.map(t => {
+      const pred = predictPillar(data, idx => data.solarTermMap?.get(idx)?.name, t.name);
+      return {
+        name: t.name, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0,
+        hasData: !!pred,
+      };
+    });
+  }, [data]);
 
   // 年柱预测
   const yearPred = useMemo(() => {
@@ -148,208 +98,138 @@ export default function PredictionPanel({ data }: Props) {
     return predictPillar(data, idx => data.ganZhiMap?.get(idx)?.yearPillar, yearInfo.yearPillar);
   }, [data, yearInfo]);
 
-  // 月柱预测
-  const monthPreds = useMemo(() => {
-    const months = get2026Months();
-    return months.map(m => ({
-      month: m.month,
-      pillar: m.pillar,
-      pred: predictPillar(data, idx => data.ganZhiMap?.get(idx)?.monthPillar, m.pillar),
-    }));
-  }, [data]);
+  const monthHas = monthChartData.filter(d => d.hasData).length;
+  const termHas = termChartData.filter(d => d.hasData).length;
 
-  // 节气预测
-  const termPreds = useMemo(() => {
-    const terms = get2026SolarTerms();
-    return terms.map(t => ({
-      name: t.name,
-      dateStr: t.dateStr,
-      pred: predictPillar(data, idx => data.solarTermMap?.get(idx)?.name, t.name),
-    }));
-  }, [data]);
-
-  if (!yearInfo) {
-    return (
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-400 text-sm">
-        无法获取2026年干支信息
-      </div>
-    );
-  }
-
-  const monthHasData = monthPreds.filter(m => m.pred).length;
-  const termHasData = termPreds.filter(t => t.pred).length;
+  if (!yearInfo) return <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-400 text-sm">无法获取2026年干支信息</div>;
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden space-y-px">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-white font-medium text-sm">走势预测</h3>
           <span className="text-slate-500 text-xs">基于历史同干支/节气统计</span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-          <span>目标年: 2026 ({yearInfo.yearPillar}年)</span>
-        </div>
+        <span className="text-xs text-slate-400">目标年: 2026 ({yearInfo.yearPillar}年)</span>
       </div>
 
-      {/* 年柱预测 */}
+      {/* 年柱 */}
       <div className="px-4 py-4 flex items-center gap-6">
         <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ${
-            yearPred ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-700/30 text-slate-500'
-          }`}>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold ${yearPred ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-700/30 text-slate-500'}`}>
             {yearInfo.yearPillar}
           </div>
           <div>
             <p className="text-slate-400 text-xs">年柱预测</p>
             {yearPred ? (
               <div className="flex items-center gap-1.5">
-                {yearPred.avgReturn >= 0 ? (
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <TrendingDown className="w-4 h-4 text-rose-400" />
-                )}
-                <span className={`text-lg font-bold ${yearPred.avgReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {fmtPct(yearPred.avgReturn)}
-                </span>
+                {yearPred.avgReturn >= 0 ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-rose-400" />}
+                <span className={`text-lg font-bold ${yearPred.avgReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(yearPred.avgReturn)}</span>
               </div>
-            ) : (
-              <span className="text-slate-500 text-sm">无历史数据</span>
-            )}
+            ) : <span className="text-slate-500 text-sm">无历史数据</span>}
           </div>
         </div>
-        {yearPred && (
-          <div className="text-xs text-slate-500">
-            历史出现 {yearPred.count} 次
-          </div>
-        )}
+        {yearPred && <span className="text-xs text-slate-500">历史出现 {yearPred.count} 次</span>}
       </div>
 
-      {/* 月柱预测 */}
-      {monthHasData > 0 && (
-        <div className="border-t border-slate-700 px-4 py-3 space-y-3">
-          <p className="text-slate-400 text-xs">月柱预测 (2026年各月)</p>
-          {/* 月柱走势图 */}
-          <div style={{ height: 200 }}>
+      {/* 月柱走势图 */}
+      {monthHas > 0 && (
+        <div className="border-t border-slate-700 px-4 py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-slate-400 text-xs">月柱预测</p>
+            <span className="text-slate-500 text-[10px]">有数据 {monthHas}/12</span>
+          </div>
+          <div className="w-full" style={{ height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthPreds.map(m => ({
-                name: `${m.month}月`,
-                value: m.pred?.avgReturn ?? 0,
-                count: m.pred?.count ?? 0,
-                hasData: !!m.pred,
-                pillar: m.pillar,
-              }))} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={monthChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} tickFormatter={(v: number) => (v * 100).toFixed(0) + '%'} />
-                <Tooltip content={({ active, payload }: any) => {
-                  if (!active || !payload?.length) return null;
-                  const d = payload[0].payload;
-                  if (!d.hasData) return null;
-                  return (
-                    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
-                      <p className="text-white text-sm font-medium">{d.name} ({d.pillar})</p>
-                      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
-                      <p className="text-slate-500 text-xs">n={d.count}</p>
-                    </div>
-                  );
-                }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={28}>
-                  {monthPreds.map((m, i) => (
-                    <Cell key={i} fill={m.pred ? (m.pred.avgReturn >= 0 ? '#10b981' : '#f43f5e') : '#334155'} fillOpacity={m.pred ? 0.85 : 0.3} />
-                  ))}
-                </Bar>
+                <Tooltip content={<MonthTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                <Bar dataKey="value" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          {/* 月柱数值网格 */}
+          {/* 月柱数值 */}
           <div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
-            {monthPreds.map(m => (
-              <div key={m.month} className={`text-center p-2 rounded-lg ${
-                m.pred ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'
-              }`}>
-                <p className="text-[10px] text-slate-500">{m.month}月</p>
-                <p className="text-xs font-medium text-amber-300">{m.pillar}</p>
-                <p className={`text-xs font-semibold mt-0.5 ${
-                  m.pred ? (m.pred.avgReturn >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'
-                }`}>
-                  {m.pred ? fmtPct(m.pred.avgReturn) : '-'}
+            {monthChartData.map(d => (
+              <div key={d.name} className={`text-center p-2 rounded-lg ${d.hasData ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'}`}>
+                <p className="text-[10px] text-slate-500">{d.name}</p>
+                <p className="text-xs font-medium text-amber-300">{d.pillar}</p>
+                <p className={`text-xs font-semibold mt-0.5 ${d.hasData ? (d.value >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}`}>
+                  {d.hasData ? fmtPct(d.value) : '-'}
                 </p>
-                {m.pred && (
-                  <p className="text-[9px] text-slate-500">n={m.pred.count}</p>
-                )}
+                {d.hasData && <p className="text-[9px] text-slate-500">n={d.count}</p>}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* 节气预测 */}
-      {termHasData > 0 && (
-        <div className="border-t border-slate-700 px-4 py-3 space-y-3">
-          <p className="text-slate-400 text-xs">节气预测 (2026年各节气区间)</p>
-          {/* 节气走势图 */}
-          <div style={{ height: 220 }}>
+      {/* 节气走势图 */}
+      {termHas > 0 && (
+        <div className="border-t border-slate-700 px-4 py-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-slate-400 text-xs">节气预测</p>
+            <span className="text-slate-500 text-[10px]">有数据 {termHas}/24</span>
+          </div>
+          <div className="w-full" style={{ height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={termPreds.map(t => {
-                const c = getSolarTermColor(t.name);
-                return {
-                  name: t.name,
-                  value: t.pred?.avgReturn ?? 0,
-                  count: t.pred?.count ?? 0,
-                  hasData: !!t.pred,
-                  barColor: t.pred ? c.text.replace('text-', '').replace('400', '500') : '#334155',
-                };
-              })} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={termChartData} margin={{ top: 5, right: 10, left: 0, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={{ stroke: '#475569' }} tickLine={false} interval={0} angle={-45} textAnchor="end" height={60} />
+                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={{ stroke: '#475569' }} tickLine={false} interval={0} angle={-45} textAnchor="end" height={50} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} tickFormatter={(v: number) => (v * 100).toFixed(0) + '%'} />
-                <Tooltip content={({ active, payload }: any) => {
-                  if (!active || !payload?.length) return null;
-                  const d = payload[0].payload;
-                  if (!d.hasData) return null;
-                  return (
-                    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
-                      <p className="text-white text-sm font-medium">{d.name}</p>
-                      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
-                      <p className="text-slate-500 text-xs">n={d.count}</p>
-                    </div>
-                  );
-                }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                <Bar dataKey="value" radius={[2, 2, 0, 0]} maxBarSize={20}>
-                  {termPreds.map((t, i) => {
-                    const c = getSolarTermColor(t.name);
-                    return (
-                      <Cell key={i} fill={t.pred ? c.text.replace('text-', '').replace('400', '500').replace('emerald', '#10b981').replace('rose', '#f43f5e').replace('amber', '#d97706').replace('sky', '#0ea5e9') : '#334155'} fillOpacity={t.pred ? 0.85 : 0.3} />
-                    );
-                  })}
-                </Bar>
+                <Tooltip content={<TermTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                <Bar dataKey="value" fill="#0ea5e9" radius={[2, 2, 0, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          {/* 节气数值网格 */}
+          {/* 节气数值 */}
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-2">
-            {termPreds.map(t => {
-              const colors = getSolarTermColor(t.name);
+            {termChartData.map(d => {
+              const c = getSolarTermColor(d.name);
               return (
-                <div key={t.name} className={`text-center p-2 rounded-lg ${
-                  t.pred ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'
-                }`}>
-                  <p className={`text-xs font-medium ${colors.text}`}>{t.name}</p>
-                  <p className={`text-xs font-semibold mt-0.5 ${
-                    t.pred ? (t.pred.avgReturn >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'
-                  }`}>
-                    {t.pred ? fmtPct(t.pred.avgReturn) : '-'}
+                <div key={d.name} className={`text-center p-2 rounded-lg ${d.hasData ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'}`}>
+                  <p className={`text-xs font-medium ${c.text}`}>{d.name}</p>
+                  <p className={`text-xs font-semibold mt-0.5 ${d.hasData ? (d.value >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}`}>
+                    {d.hasData ? fmtPct(d.value) : '-'}
                   </p>
-                  {t.pred && (
-                    <p className="text-[9px] text-slate-500">n={t.pred.count}</p>
-                  )}
+                  {d.hasData && <p className="text-[9px] text-slate-500">n={d.count}</p>}
                 </div>
               );
             })}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 月柱Tooltip */
+function MonthTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  if (!d.hasData) return null;
+  return (
+    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
+      <p className="text-white text-sm font-medium">{d.name} ({d.pillar})</p>
+      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
+      <p className="text-slate-500 text-xs">n={d.count}</p>
+    </div>
+  );
+}
+
+/** 节气Tooltip */
+function TermTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  if (!d.hasData) return null;
+  return (
+    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
+      <p className="text-white text-sm font-medium">{d.name}</p>
+      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
+      <p className="text-slate-500 text-xs">n={d.count}</p>
     </div>
   );
 }
