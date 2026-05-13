@@ -1,9 +1,15 @@
 import { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
-import { calcMonthlyStats, calcWeeklyStats, calcQuarterlyStats, calcYearTailStats, fmtPct, fmtWinRate } from '@/utils/seasonalStats';
+import {
+  calcMonthlyStats, calcWeeklyStats, calcQuarterlyStats, calcYearTailStats,
+  calcMonthlyStatsOdd, calcWeeklyStatsOdd, calcQuarterlyStatsOdd,
+  calcMonthlyStatsEven, calcWeeklyStatsEven, calcQuarterlyStatsEven,
+  fmtPct, fmtWinRate,
+} from '@/utils/seasonalStats';
 import type { ParsedCSV } from '@/types';
 
 type SubTab = 'month' | 'week' | 'quarter' | 'yearTail';
+type YearFilter = 'all' | 'odd' | 'even';
 
 interface Props { data: ParsedCSV; }
 
@@ -16,15 +22,31 @@ const TABS: { key: SubTab; label: string }[] = [
 
 export default function SeasonalAnalysis({ data }: Props) {
   const [tab, setTab] = useState<SubTab>('month');
+  const [yearFilter, setYearFilter] = useState<YearFilter>('all');
 
-  const stats = useMemo(() => ({
-    month: calcMonthlyStats(data),
-    week: calcWeeklyStats(data),
-    quarter: calcQuarterlyStats(data),
-    yearTail: calcYearTailStats(data),
-  }), [data]);
-
-  const currentStats = stats[tab];
+  // 根据 tab 和 yearFilter 计算统计
+  const currentStats = useMemo(() => {
+    if (tab === 'yearTail') {
+      // 年度尾数始终显示全部，不受奇偶年影响
+      return calcYearTailStats(data);
+    }
+    if (tab === 'month') {
+      if (yearFilter === 'odd') return calcMonthlyStatsOdd(data);
+      if (yearFilter === 'even') return calcMonthlyStatsEven(data);
+      return calcMonthlyStats(data);
+    }
+    if (tab === 'quarter') {
+      if (yearFilter === 'odd') return calcQuarterlyStatsOdd(data);
+      if (yearFilter === 'even') return calcQuarterlyStatsEven(data);
+      return calcQuarterlyStats(data);
+    }
+    if (tab === 'week') {
+      if (yearFilter === 'odd') return calcWeeklyStatsOdd(data);
+      if (yearFilter === 'even') return calcWeeklyStatsEven(data);
+      return calcWeeklyStats(data);
+    }
+    return null;
+  }, [data, tab, yearFilter]);
 
   if (!currentStats || currentStats.length === 0) {
     return (
@@ -46,6 +68,7 @@ export default function SeasonalAnalysis({ data }: Props) {
   }));
 
   const hasDataCount = currentStats.filter(s => s.hasData).length;
+  const isYearTail = tab === 'yearTail';
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
@@ -53,12 +76,12 @@ export default function SeasonalAnalysis({ data }: Props) {
       <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-white font-medium text-sm">传统金融数据的季节性分析</h3>
-          <span className="text-slate-500 text-xs">基于历史日度收益率统计</span>
+          <span className="text-slate-500 text-xs">基于历史收益率统计</span>
         </div>
         <span className="text-slate-400 text-xs">有数据 {hasDataCount}/{currentStats.length}</span>
       </div>
 
-      {/* Tabs */}
+      {/* 子标签 */}
       <div className="grid grid-cols-4 border-b border-slate-700">
         {TABS.map(t => (
           <button
@@ -74,6 +97,45 @@ export default function SeasonalAnalysis({ data }: Props) {
           </button>
         ))}
       </div>
+
+      {/* 奇偶年切换按钮（年度尾数不显示） */}
+      {!isYearTail && (
+        <div className="flex gap-2 px-4 py-2 border-b border-slate-700/50">
+          <button
+            onClick={() => setYearFilter('all')}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              yearFilter === 'all'
+                ? 'bg-slate-600 text-white'
+                : 'bg-slate-700/30 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+            }`}
+          >
+            全部年份
+          </button>
+          <button
+            onClick={() => setYearFilter('odd')}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              yearFilter === 'odd'
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                : 'bg-slate-700/30 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 border border-transparent'
+            }`}
+          >
+            奇数年
+          </button>
+          <button
+            onClick={() => setYearFilter('even')}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              yearFilter === 'even'
+                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                : 'bg-slate-700/30 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 border border-transparent'
+            }`}
+          >
+            偶数年
+          </button>
+          <span className="text-slate-500 text-[10px] ml-2 flex items-center">
+            {yearFilter === 'all' ? '全部数据' : yearFilter === 'odd' ? '仅奇数年(2001,2003...)' : '仅偶数年(2000,2002...)'}
+          </span>
+        </div>
+      )}
 
       {/* Chart */}
       <div className="px-4 py-4">
