@@ -8,6 +8,7 @@ import CSVTable from '@/components/CSVTable';
 import CSVChart from '@/components/CSVChart';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import GanZhiChart from '@/components/GanZhiChart';
+import PredictionPanel from '@/components/PredictionPanel';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
 
@@ -124,6 +125,7 @@ export default function App() {
                   <DataCards data={uploadedFile.data} />
 
                   {isStockData && <CSVChart data={uploadedFile.data} />}
+                  {isStockData && <PredictionPanel data={uploadedFile.data} />}
 
                   {/* Tab Switcher */}
                   <div className="flex gap-2">
