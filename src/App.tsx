@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BarChart3, Upload, Table2, ScrollText } from 'lucide-react';
+import { BarChart3, Upload, Table2, ScrollText, TrendingUp } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
@@ -9,10 +9,11 @@ import CSVChart from '@/components/CSVChart';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import GanZhiChart from '@/components/GanZhiChart';
 import PredictionPanel from '@/components/PredictionPanel';
+import SeasonalAnalysis from '@/components/SeasonalAnalysis';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
 
-type ViewTab = 'preview' | 'classical';
+type ViewTab = 'preview' | 'classical' | 'seasonal';
 
 export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
@@ -148,6 +149,17 @@ export default function App() {
                       <ScrollText className="w-4 h-4" />
                       古典历法分析
                     </button>
+                    <button
+                      onClick={() => setViewTab('seasonal')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        viewTab === 'seasonal'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
+                      }`}
+                    >
+                      <TrendingUp className="w-4 h-4" />
+                      季节性分析
+                    </button>
                   </div>
 
                   {/* 数据预览标签页 */}
@@ -164,6 +176,13 @@ export default function App() {
                       {isStockData && <PredictionPanel data={uploadedFile.data} />}
                       <StatisticsPanel data={uploadedFile.data} />
                       <GanZhiChart data={uploadedFile.data} />
+                    </div>
+                  )}
+
+                  {/* 季节性分析标签页 */}
+                  {viewTab === 'seasonal' && (
+                    <div className="space-y-8">
+                      <SeasonalAnalysis data={uploadedFile.data} />
                     </div>
                   )}
 
