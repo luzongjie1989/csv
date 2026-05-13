@@ -32,7 +32,7 @@ export function fmtWinRate(up: number, total: number): string {
 }
 
 /** 解析日期字符串 */
-function parseDate(dateStr: string): ParsedDate | null {
+export function parseDate(dateStr: string): ParsedDate | null {
   const str = dateStr.trim();
   const iso = str.match(/(\d{4})[\-/](\d{1,2})[\-/](\d{1,2})/);
   if (iso) {

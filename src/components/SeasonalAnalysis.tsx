@@ -6,6 +6,7 @@ import {
   calcMonthlyStatsEven, calcWeeklyStatsEven, calcQuarterlyStatsEven,
   fmtPct, fmtWinRate,
 } from '@/utils/seasonalStats';
+import YearComparisonChart from '@/components/YearComparisonChart';
 import type { ParsedCSV } from '@/types';
 
 type SubTab = 'month' | 'week' | 'quarter' | 'yearTail';
@@ -71,7 +72,12 @@ export default function SeasonalAnalysis({ data }: Props) {
   const isYearTail = tab === 'yearTail';
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+    <div className="space-y-6">
+      {/* 年份趋势比对图 */}
+      <YearComparisonChart data={data} />
+
+      {/* 季节性分析主面板 */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -154,6 +160,8 @@ export default function SeasonalAnalysis({ data }: Props) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
       </div>
 
       {/* Stats Grid */}
