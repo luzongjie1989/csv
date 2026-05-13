@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
+} from 'recharts';
 import { fmtPct } from '@/utils/statistics';
 import { getSolarTermColor } from '@/utils/solarTerms';
 import { Solar } from 'lunar-javascript';
@@ -224,8 +227,42 @@ export default function PredictionPanel({ data }: Props) {
 
       {/* 月柱预测 */}
       {monthHasData > 0 && (
-        <div className="border-t border-slate-700 px-4 py-3">
-          <p className="text-slate-400 text-xs mb-2">月柱预测 (2026年各月)</p>
+        <div className="border-t border-slate-700 px-4 py-3 space-y-3">
+          <p className="text-slate-400 text-xs">月柱预测 (2026年各月)</p>
+          {/* 月柱走势图 */}
+          <div style={{ height: 200 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthPreds.map(m => ({
+                name: `${m.month}月`,
+                value: m.pred?.avgReturn ?? 0,
+                count: m.pred?.count ?? 0,
+                hasData: !!m.pred,
+                pillar: m.pillar,
+              }))} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} tickFormatter={(v: number) => (v * 100).toFixed(0) + '%'} />
+                <Tooltip content={({ active, payload }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  if (!d.hasData) return null;
+                  return (
+                    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
+                      <p className="text-white text-sm font-medium">{d.name} ({d.pillar})</p>
+                      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
+                      <p className="text-slate-500 text-xs">n={d.count}</p>
+                    </div>
+                  );
+                }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={28}>
+                  {monthPreds.map((m, i) => (
+                    <Cell key={i} fill={m.pred ? (m.pred.avgReturn >= 0 ? '#10b981' : '#f43f5e') : '#334155'} fillOpacity={m.pred ? 0.85 : 0.3} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {/* 月柱数值网格 */}
           <div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
             {monthPreds.map(m => (
               <div key={m.month} className={`text-center p-2 rounded-lg ${
@@ -249,8 +286,48 @@ export default function PredictionPanel({ data }: Props) {
 
       {/* 节气预测 */}
       {termHasData > 0 && (
-        <div className="border-t border-slate-700 px-4 py-3">
-          <p className="text-slate-400 text-xs mb-2">节气预测 (2026年各节气区间)</p>
+        <div className="border-t border-slate-700 px-4 py-3 space-y-3">
+          <p className="text-slate-400 text-xs">节气预测 (2026年各节气区间)</p>
+          {/* 节气走势图 */}
+          <div style={{ height: 220 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={termPreds.map(t => {
+                const c = getSolarTermColor(t.name);
+                return {
+                  name: t.name,
+                  value: t.pred?.avgReturn ?? 0,
+                  count: t.pred?.count ?? 0,
+                  hasData: !!t.pred,
+                  barColor: t.pred ? c.text.replace('text-', '').replace('400', '500') : '#334155',
+                };
+              })} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={{ stroke: '#475569' }} tickLine={false} interval={0} angle={-45} textAnchor="end" height={60} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} tickFormatter={(v: number) => (v * 100).toFixed(0) + '%'} />
+                <Tooltip content={({ active, payload }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  if (!d.hasData) return null;
+                  return (
+                    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
+                      <p className="text-white text-sm font-medium">{d.name}</p>
+                      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
+                      <p className="text-slate-500 text-xs">n={d.count}</p>
+                    </div>
+                  );
+                }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                <Bar dataKey="value" radius={[2, 2, 0, 0]} maxBarSize={20}>
+                  {termPreds.map((t, i) => {
+                    const c = getSolarTermColor(t.name);
+                    return (
+                      <Cell key={i} fill={t.pred ? c.text.replace('text-', '').replace('400', '500').replace('emerald', '#10b981').replace('rose', '#f43f5e').replace('amber', '#d97706').replace('sky', '#0ea5e9') : '#334155'} fillOpacity={t.pred ? 0.85 : 0.3} />
+                    );
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {/* 节气数值网格 */}
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-2">
             {termPreds.map(t => {
               const colors = getSolarTermColor(t.name);
