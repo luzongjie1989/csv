@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { fmtPct } from '@/utils/statistics';
 import { getSolarTermColor } from '@/utils/solarTerms';
@@ -8,21 +8,88 @@ import type { ParsedCSV } from '@/types';
 
 interface Props { data: ParsedCSV; }
 
-function predictPillar(
-  data: ParsedCSV,
-  keyFn: (idx: number) => string | undefined,
-  target: string
-): { count: number; avgReturn: number } | null {
+/** 当前北京时间 */
+function getNowBeijing(): Date {
+  return new Date();
+}
+
+/** 当前甲子历 */
+function getCurrentGanZhi() {
+  const now = getNowBeijing();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  try {
+    const solar = Solar.fromYmd(y, m, d);
+    const lunar = solar.getLunar();
+    return {
+      dateStr: `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+      yearPillar: lunar.getYearInGanZhi(),
+      monthPillar: lunar.getMonthInGanZhi(),
+      dayPillar: lunar.getDayInGanZhi(),
+      year: y, month: m, day: d,
+    };
+  } catch { return null; }
+}
+
+/** 获取指定年份的完整节气列表（含日期） */
+function getSolarTermsWithDates(year: number): { name: string; month: number; day: number; dateStr: string }[] {
+  try {
+    const solar = Solar.fromYmd(year, 6, 1);
+    const lunar = solar.getLunar();
+    const table = lunar.getJieQiTable() as Record<string, any>;
+    const list = lunar.getJieQiList() as string[];
+    const skip = new Set(['DA_XUE','DONG_ZHI','XIAO_HAN','DA_HAN','LI_CHUN','YU_SHUI','JING_ZHE']);
+    const res: { name: string; month: number; day: number; dateStr: string }[] = [];
+    for (const n of list) {
+      if (skip.has(n)) continue;
+      const s = table[n]; if (!s) continue;
+      if (s.getYear() === year) {
+        res.push({ name: n, month: s.getMonth(), day: s.getDay(),
+          dateStr: `${s.getYear()}-${String(s.getMonth()).padStart(2,'0')}-${String(s.getDay()).padStart(2,'0')}` });
+      }
+    }
+    return res.sort((a, b) => a.month !== b.month ? a.month - b.month : a.day - b.day);
+  } catch { return []; }
+}
+
+/** 获取每个节气的日期范围 {start, end} */
+function getTermRanges(year: number): Map<string, { start: string; end: string }> {
+  const terms = getSolarTermsWithDates(year);
+  const map = new Map<string, { start: string; end: string }>();
+  for (let i = 0; i < terms.length; i++) {
+    const start = terms[i].dateStr;
+    const end = i < terms.length - 1 ? terms[i + 1].dateStr : `${year}-12-31`;
+    const endDate = new Date(end);
+    endDate.setDate(endDate.getDate() - 1);
+    const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,'0')}-${String(endDate.getDate()).padStart(2,'0')}`;
+    map.set(terms[i].name, { start, end: endStr });
+  }
+  return map;
+}
+
+/** 判断当前处于哪个节气区间 */
+function getCurrentSolarTerm(year: number, month: number, day: number): string | null {
+  const terms = getSolarTermsWithDates(year);
+  const current = new Date(year, month - 1, day);
+  let currentTerm: string | null = null;
+  for (const t of terms) {
+    const termDate = new Date(year, t.month - 1, t.day);
+    if (termDate <= current) currentTerm = t.name;
+    else break;
+  }
+  return currentTerm;
+}
+
+/** 预测核心逻辑 */
+function predictPillar(data: ParsedCSV, keyFn: (idx: number) => string | undefined, target: string) {
   if (!data.closeColumn) return null;
-  const closes: number[] = [];
-  const indices: number[] = [];
+  const closes: number[] = []; const indices: number[] = [];
   data.rows.forEach((row, idx) => {
     const v = parseFloat(row[data.closeColumn!] || '');
     if (!isNaN(v) && v > 0) { closes.push(v); indices.push(idx); }
   });
   if (closes.length < 2) return null;
-
-  // 找到target的所有连续段
   const segs: { first: number; last: number }[] = [];
   let inSeg = false;
   indices.forEach((origIdx, i) => {
@@ -38,7 +105,7 @@ function predictPillar(
 }
 
 function getYearGanZhi(year: number) {
-  try { const s = Solar.fromYmd(year, 6, 1).getLunar(); const p = s.getYearInGanZhi(); return { yearPillar: p, gan: p[0], zhi: p[1] }; }
+  try { const p = Solar.fromYmd(year, 6, 1).getLunar().getYearInGanZhi(); return { yearPillar: p, gan: p[0], zhi: p[1] }; }
   catch { return null; }
 }
 
@@ -47,50 +114,40 @@ function getMonthPillar(year: number, month: number) {
   catch { return null; }
 }
 
-function getYearSolarTerms(year: number) {
-  try {
-    const table = Solar.fromYmd(year, 6, 1).getLunar().getJieQiTable() as Record<string, any>;
-    const list = Solar.fromYmd(year, 6, 1).getLunar().getJieQiList() as string[];
-    const skip = new Set(['DA_XUE','DONG_ZHI','XIAO_HAN','DA_HAN','LI_CHUN','YU_SHUI','JING_ZHE']);
-    const res: { name: string; month: number; day: number }[] = [];
-    for (const n of list) {
-      if (skip.has(n)) continue;
-      const s = table[n]; if (!s) continue;
-      if (s.getYear() === year) res.push({ name: n, month: s.getMonth(), day: s.getDay() });
-    }
-    return res.sort((a, b) => a.month !== b.month ? a.month - b.month : a.day - b.day);
-  } catch { return []; }
-}
-
 export default function PredictionPanel({ data }: Props) {
+  const current = useMemo(() => getCurrentGanZhi(), []);
   const yearInfo = useMemo(() => getYearGanZhi(2026), []);
 
-  // 月柱预测
-  const monthChartData = useMemo(() => {
-    const items: { name: string; value: number; count: number; hasData: boolean; pillar: string }[] = [];
+  // 节气范围和当前节气
+  const termRanges = useMemo(() => getTermRanges(2026), []);
+  const currentTerm = useMemo(() => {
+    if (!current) return null;
+    return getCurrentSolarTerm(current.year, current.month, current.day);
+  }, [current]);
+
+  // 月柱数据
+  const monthData = useMemo(() => {
+    const items: { name: string; value: number; count: number; hasData: boolean; pillar: string; isCurrent: boolean }[] = [];
     for (let m = 1; m <= 12; m++) {
       const pillar = getMonthPillar(2026, m);
       if (!pillar) continue;
-      const pred = pillar ? predictPillar(data, idx => data.ganZhiMap?.get(idx)?.monthPillar, pillar) : null;
-      items.push({
-        name: `${m}月`, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0,
-        hasData: !!pred, pillar,
-      });
+      const pred = predictPillar(data, idx => data.ganZhiMap?.get(idx)?.monthPillar, pillar);
+      const isCurrent = current?.monthPillar === pillar;
+      items.push({ name: `${m}月`, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0, hasData: !!pred, pillar, isCurrent });
     }
     return items;
-  }, [data]);
+  }, [data, current]);
 
-  // 节气预测
-  const termChartData = useMemo(() => {
-    const terms = getYearSolarTerms(2026);
+  // 节气数据
+  const termData = useMemo(() => {
+    const terms = getSolarTermsWithDates(2026);
     return terms.map(t => {
       const pred = predictPillar(data, idx => data.solarTermMap?.get(idx)?.name, t.name);
-      return {
-        name: t.name, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0,
-        hasData: !!pred,
-      };
+      const range = termRanges.get(t.name);
+      const isCurrent = currentTerm === t.name;
+      return { name: t.name, value: pred?.avgReturn ?? 0, count: pred?.count ?? 0, hasData: !!pred, dateStr: t.dateStr, range, isCurrent };
     });
-  }, [data]);
+  }, [data, currentTerm, termRanges]);
 
   // 年柱预测
   const yearPred = useMemo(() => {
@@ -98,20 +155,33 @@ export default function PredictionPanel({ data }: Props) {
     return predictPillar(data, idx => data.ganZhiMap?.get(idx)?.yearPillar, yearInfo.yearPillar);
   }, [data, yearInfo]);
 
-  const monthHas = monthChartData.filter(d => d.hasData).length;
-  const termHas = termChartData.filter(d => d.hasData).length;
+  const monthHas = monthData.filter(d => d.hasData).length;
+  const termHas = termData.filter(d => d.hasData).length;
 
-  if (!yearInfo) return <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-400 text-sm">无法获取2026年干支信息</div>;
+  if (!yearInfo || !current) {
+    return <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-400 text-sm">无法获取干支信息</div>;
+  }
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h3 className="text-white font-medium text-sm">走势预测</h3>
-          <span className="text-slate-500 text-xs">基于历史同干支/节气统计</span>
+      {/* Header + 当前甲子历 */}
+      <div className="px-4 py-3 border-b border-slate-700">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-white font-medium text-sm">走势预测</h3>
+            <span className="text-slate-500 text-xs">基于历史同干支/节气统计</span>
+          </div>
+          <span className="text-xs text-slate-400">目标年: 2026 ({yearInfo.yearPillar}年)</span>
         </div>
-        <span className="text-xs text-slate-400">目标年: 2026 ({yearInfo.yearPillar}年)</span>
+        {/* 当前甲子历信息 */}
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <Clock className="w-3 h-3" />
+          <span>今天: {current.dateStr}</span>
+          <span className="text-amber-400 font-medium">{current.yearPillar}年</span>
+          <span className="text-purple-400 font-medium">{current.monthPillar}月</span>
+          <span className="text-cyan-400 font-medium">{current.dayPillar}日</span>
+          {currentTerm && <span className="text-emerald-400 font-medium">{currentTerm}</span>}
+        </div>
       </div>
 
       {/* 年柱 */}
@@ -137,12 +207,12 @@ export default function PredictionPanel({ data }: Props) {
       {monthHas > 0 && (
         <div className="border-t border-slate-700 px-4 py-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-xs">月柱预测</p>
+            <p className="text-slate-400 text-xs">月柱预测 {current?.monthPillar && <span className="text-purple-400">(当前: {current.monthPillar}月)</span>}</p>
             <span className="text-slate-500 text-[10px]">有数据 {monthHas}/12</span>
           </div>
           <div className="w-full" style={{ height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <BarChart data={monthData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} tickFormatter={(v: number) => (v * 100).toFixed(0) + '%'} />
@@ -153,10 +223,13 @@ export default function PredictionPanel({ data }: Props) {
           </div>
           {/* 月柱数值 */}
           <div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
-            {monthChartData.map(d => (
-              <div key={d.name} className={`text-center p-2 rounded-lg ${d.hasData ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'}`}>
+            {monthData.map(d => (
+              <div key={d.name} className={`text-center p-2 rounded-lg relative ${
+                d.isCurrent ? 'ring-2 ring-purple-400 bg-purple-500/10' : d.hasData ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'
+              }`}>
+                {d.isCurrent && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-purple-400 animate-pulse" />}
                 <p className="text-[10px] text-slate-500">{d.name}</p>
-                <p className="text-xs font-medium text-amber-300">{d.pillar}</p>
+                <p className={`text-xs font-medium ${d.isCurrent ? 'text-purple-400' : 'text-amber-300'}`}>{d.pillar}</p>
                 <p className={`text-xs font-semibold mt-0.5 ${d.hasData ? (d.value >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}`}>
                   {d.hasData ? fmtPct(d.value) : '-'}
                 </p>
@@ -171,12 +244,12 @@ export default function PredictionPanel({ data }: Props) {
       {termHas > 0 && (
         <div className="border-t border-slate-700 px-4 py-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-slate-400 text-xs">节气预测</p>
+            <p className="text-slate-400 text-xs">节气预测 {currentTerm && <span className="text-emerald-400">(当前: {currentTerm})</span>}</p>
             <span className="text-slate-500 text-[10px]">有数据 {termHas}/24</span>
           </div>
           <div className="w-full" style={{ height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={termChartData} margin={{ top: 5, right: 10, left: 0, bottom: 30 }}>
+              <BarChart data={termData} margin={{ top: 5, right: 10, left: 0, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={{ stroke: '#475569' }} tickLine={false} interval={0} angle={-45} textAnchor="end" height={50} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} tickFormatter={(v: number) => (v * 100).toFixed(0) + '%'} />
@@ -187,11 +260,15 @@ export default function PredictionPanel({ data }: Props) {
           </div>
           {/* 节气数值 */}
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-2">
-            {termChartData.map(d => {
+            {termData.map(d => {
               const c = getSolarTermColor(d.name);
               return (
-                <div key={d.name} className={`text-center p-2 rounded-lg ${d.hasData ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'}`}>
-                  <p className={`text-xs font-medium ${c.text}`}>{d.name}</p>
+                <div key={d.name} className={`text-center p-2 rounded-lg relative ${
+                  d.isCurrent ? 'ring-2 ring-emerald-400 bg-emerald-500/10' : d.hasData ? 'bg-slate-700/30' : 'bg-slate-700/10 opacity-30'
+                }`}>
+                  {d.isCurrent && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+                  <p className={`text-xs font-medium ${d.isCurrent ? 'text-emerald-400' : c.text}`}>{d.name}</p>
+                  <p className="text-[10px] text-slate-500">{d.dateStr}</p>
                   <p className={`text-xs font-semibold mt-0.5 ${d.hasData ? (d.value >= 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-500'}`}>
                     {d.hasData ? fmtPct(d.value) : '-'}
                   </p>
@@ -213,23 +290,33 @@ function MonthTooltip({ active, payload }: any) {
   if (!d.hasData) return null;
   return (
     <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-white text-sm font-medium">{d.name} ({d.pillar})</p>
+      <p className="text-white text-sm font-medium">{d.name} ({d.pillar}) {d.isCurrent && <span className="text-purple-400">← 当前</span>}</p>
       <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
       <p className="text-slate-500 text-xs">n={d.count}</p>
     </div>
   );
 }
 
-/** 节气Tooltip */
+/** 节气Tooltip（显示日期范围） */
 function TermTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
-  if (!d.hasData) return null;
+  if (!d.hasData && !d.range) return null;
   return (
-    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-white text-sm font-medium">{d.name}</p>
-      <p className={`text-xs font-semibold ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
-      <p className="text-slate-500 text-xs">n={d.count}</p>
+    <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl min-w-[160px]">
+      <p className="text-white text-sm font-medium">{d.name} {d.isCurrent && <span className="text-emerald-400">← 当前</span>}</p>
+      {d.range && (
+        <p className="text-amber-300 text-xs mt-0.5">
+          {d.range.start} ~ {d.range.end}
+        </p>
+      )}
+      {d.hasData && (
+        <>
+          <p className={`text-xs font-semibold mt-1 ${d.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtPct(d.value)}</p>
+          <p className="text-slate-500 text-xs">n={d.count}</p>
+        </>
+      )}
+      {!d.hasData && <p className="text-slate-500 text-xs mt-1">无历史数据</p>}
     </div>
   );
 }
