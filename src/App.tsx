@@ -125,6 +125,9 @@ export default function App() {
                 <div className="space-y-6">
                   <DataCards data={uploadedFile.data} />
 
+                  {/* 价格走势图 - 页面顶端独立模块（所有标签页可见） */}
+                  {isStockData && <CSVChart data={uploadedFile.data} />}
+
                   {/* Tab Switcher */}
                   <div className="flex gap-2">
                     <button
@@ -172,7 +175,6 @@ export default function App() {
                   {/* 古典历法分析标签页 */}
                   {viewTab === 'classical' && (
                     <div className="space-y-8">
-                      {isStockData && <CSVChart data={uploadedFile.data} />}
                       {isStockData && <PredictionPanel data={uploadedFile.data} />}
                       <StatisticsPanel data={uploadedFile.data} />
                       <GanZhiChart data={uploadedFile.data} />
