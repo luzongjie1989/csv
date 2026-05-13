@@ -7,58 +7,50 @@ export interface YearLineData {
   label: string;
   /** 归一化后的价格序列（起点=100） */
   prices: number[];
-  /** 对应的交易日标签（第N天） */
-  labels: string[];
+  /** 对应的具体日期标签 ["1/5", "1/8"...] */
+  dateLabels: string[];
   /** 最终累计收益率 */
   finalReturn: number;
+  /** 交易日数量 */
+  tradeDays: number;
 }
 
 /**
- * 提取指定年份从1月1日到endMonth/endDay的收盘价数据，归一化到起点=100
+ * 提取指定年份的收盘价数据
+ * - 当前年：从1月1日到endMonth/endDay
+ * - 往年：从1月1日到12月31日（完整年份）
  */
 export function extractYearLine(
   data: ParsedCSV,
   targetYear: number,
-  endMonth: number,
-  endDay: number,
   isCurrent: boolean
 ): YearLineData | null {
   if (!data.closeColumn || !data.dateColumn) return null;
 
   // 收集所有交易日
-  const items: { date: { year: number; month: number; day: number }; close: number }[] = [];
+  const items: { month: number; day: number; close: number }[] = [];
   for (const row of data.rows) {
     const c = parseFloat(row[data.closeColumn!] || '');
     const d = parseDate(row[data.dateColumn!] || '');
-    if (!isNaN(c) && c > 0 && d) {
-      items.push({ date: d, close: c });
+    if (!isNaN(c) && c > 0 && d && d.year === targetYear) {
+      items.push({ month: d.month, day: d.day, close: c });
     }
   }
   if (items.length < 2) return null;
 
-  // 筛选目标年份，且不超过 endMonth/endDay
-  const filtered = items.filter(item => {
-    if (item.date.year !== targetYear) return false;
-    if (item.date.month > endMonth) return false;
-    if (item.date.month === endMonth && item.date.day > endDay) return false;
-    return true;
-  });
-
-  if (filtered.length < 2) return null;
-
   // 按日期排序
-  filtered.sort((a, b) => {
-    if (a.date.month !== b.date.month) return a.date.month - b.date.month;
-    return a.date.day - b.date.day;
+  items.sort((a, b) => {
+    if (a.month !== b.month) return a.month - b.month;
+    return a.day - b.day;
   });
 
   // 去重：同一天取最后一个收盘价
-  const deduped: typeof filtered = [];
-  for (const item of filtered) {
+  const deduped: typeof items = [];
+  for (const item of items) {
     if (deduped.length > 0) {
       const last = deduped[deduped.length - 1];
-      if (last.date.month === item.date.month && last.date.day === item.date.day) {
-        deduped[deduped.length - 1] = item; // 替换为后面的
+      if (last.month === item.month && last.day === item.day) {
+        deduped[deduped.length - 1] = item;
         continue;
       }
     }
@@ -68,7 +60,7 @@ export function extractYearLine(
   // 归一化：起点 = 100
   const firstClose = deduped[0].close;
   const prices = deduped.map(item => (item.close / firstClose) * 100);
-  const labels = deduped.map(item => `${item.date.month}/${item.date.day}`);
+  const dateLabels = deduped.map(item => `${item.month}/${item.day}`);
   const finalReturn = (deduped[deduped.length - 1].close / firstClose) - 1;
 
   return {
@@ -76,8 +68,9 @@ export function extractYearLine(
     isCurrent,
     label: isCurrent ? `${targetYear}年(当前)` : `${targetYear}年`,
     prices,
-    labels,
+    dateLabels,
     finalReturn,
+    tradeDays: deduped.length,
   };
 }
 
@@ -110,7 +103,6 @@ export function getAvailableYears(data: ParsedCSV): number[] {
 
 /** 将多条不同长度的线对齐为统一的数据格式（用于Recharts） */
 export function alignLinesForChart(lines: YearLineData[]): { chartData: any[]; maxLen: number } {
-  // 找到最大长度
   const maxLen = Math.max(...lines.map(l => l.prices.length), 0);
   if (maxLen === 0) return { chartData: [], maxLen: 0 };
 
@@ -119,6 +111,8 @@ export function alignLinesForChart(lines: YearLineData[]): { chartData: any[]; m
     const point: any = { day: i + 1 };
     for (const line of lines) {
       point[line.label] = i < line.prices.length ? line.prices[i] : null;
+      // 存日期标签用于tooltip
+      point[`${line.label}_date`] = i < line.dateLabels.length ? line.dateLabels[i] : null;
     }
     chartData.push(point);
   }
