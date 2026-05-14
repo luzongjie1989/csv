@@ -46,6 +46,9 @@ export interface MotifPair {
   idxB: number;
   dateA: string;
   dateB: string;
+  /** 原始完整日期格式（用于走势图联动） */
+  rawDateA: string;
+  rawDateB: string;
   distance: number;
   similarity: number; // 相似度得分 (0~1)
 }
@@ -78,22 +81,26 @@ export interface SimilarPattern {
 /**
  * 计算 Matrix Profile
  * @param prices 收盘价序列
- * @param dates 日期序列（与prices一一对应）
+ * @param dates 日期序列（显示用，如 "1/5"）
  * @param window 窗口大小（默认20）
  * @param maxN 最大处理数据量（默认500，防止浏览器卡死）
+ * @param rawDates 原始日期序列（用于走势图联动，如 "2024-01-05"）
  */
 export function calculateMatrixProfile(
   prices: number[],
   dates: string[],
   window: number = 20,
-  maxN: number = 500
+  maxN: number = 500,
+  rawDates?: string[]
 ): MatrixProfileResult {
   // 截断数据
   let series = prices;
   let dateLabels = dates;
+  let rawDateLabels = rawDates || dates;
   if (series.length > maxN) {
     series = series.slice(-maxN);
     dateLabels = dates.slice(-maxN);
+    rawDateLabels = rawDateLabels.slice(-maxN);
   }
 
   if (series.length < window * 2) {
@@ -150,6 +157,8 @@ export function calculateMatrixProfile(
       idxB: neighbor,
       dateA: dateLabels[item.idx],
       dateB: dateLabels[neighbor],
+      rawDateA: rawDateLabels[item.idx],
+      rawDateB: rawDateLabels[neighbor],
       distance: item.dist,
       similarity,
     });

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Brush, ReferenceArea,
@@ -15,6 +15,8 @@ interface CSVChartProps {
 
 export default function CSVChart({ data, highlightedPatterns, onClearPatterns }: CSVChartProps) {
   const [scaleType, setScaleType] = useState<ScaleType>('linear');
+  // Brush 范围（用于自动适配 Motif 画面）
+  const [brushRange, setBrushRange] = useState<{ startIndex?: number; endIndex?: number }>({});
 
   const rawData = useMemo(() => {
     const { dateColumn, closeColumn, headers, rows } = data;
@@ -78,6 +80,38 @@ export default function CSVChart({ data, highlightedPatterns, onClearPatterns }:
   });
 
   const colorPalette = ['#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
+  // 根据 Motif 数量自动适配画面
+  useEffect(() => {
+    if (highlightedPatterns.length === 0 || rawData.length === 0) {
+      setBrushRange({});
+      return;
+    }
+
+    // 收集所有标注的日期索引
+    const indices: number[] = [];
+    highlightedPatterns.forEach(pattern => {
+      for (let i = 0; i < rawData.length; i++) {
+        if (rawData[i].date === pattern.startDate) indices.push(i);
+        if (rawData[i].date === pattern.endDate) indices.push(i);
+      }
+    });
+
+    if (indices.length === 0) {
+      setBrushRange({});
+      return;
+    }
+
+    // 计算最优显示范围（包含所有 Motif，前后各留 10% 边距）
+    const minIdx = Math.min(...indices);
+    const maxIdx = Math.max(...indices);
+    const padding = Math.max(Math.floor((maxIdx - minIdx) * 0.1), 5);
+
+    const start = Math.max(0, minIdx - padding);
+    const end = Math.min(rawData.length - 1, maxIdx + padding);
+
+    setBrushRange({ startIndex: start, endIndex: end });
+  }, [highlightedPatterns, rawData]);
 
   // 匹配高亮模式到数据索引
   const matchedPatterns = useMemo(() => {
@@ -247,13 +281,23 @@ export default function CSVChart({ data, highlightedPatterns, onClearPatterns }:
               />
             )}
 
-            {/* 缩放Brush */}
+            {/* 缩放Brush - 根据Motif自动适配 */}
             <Brush
               dataKey="date"
               height={30}
               stroke="#475569"
               fill="#1e293b"
               travellerWidth={8}
+              startIndex={brushRange.startIndex}
+              endIndex={brushRange.endIndex}
+              onChange={(range: any) => {
+                if (range) {
+                  setBrushRange({
+                    startIndex: range.startIndex,
+                    endIndex: range.endIndex,
+                  });
+                }
+              }}
               tickFormatter={(value: string) => {
                 // 显示简短日期
                 const parts = value.match(/\d+/g);

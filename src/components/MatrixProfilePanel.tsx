@@ -38,11 +38,11 @@ export default function MatrixProfilePanel({ data, onHighlightPatterns }: Props)
     return { prices: p, dates: d, rawDates: rd };
   }, [data]);
 
-  // Matrix Profile 计算
+  // Matrix Profile 计算（传入原始日期用于走势图联动）
   const mpResult = useMemo(() => {
     if (prices.length < window * 2) return null;
-    return calculateMatrixProfile(prices, dates, window);
-  }, [prices, dates, window]);
+    return calculateMatrixProfile(prices, dates, window, 500, rawDates);
+  }, [prices, dates, window, rawDates]);
 
   // 相似模式查找
   const similarPatterns = useMemo(() => {
@@ -79,20 +79,38 @@ export default function MatrixProfilePanel({ data, onHighlightPatterns }: Props)
     });
   }, [similarPatterns, dates, rawDates, window]);
 
-  // 自动标注当前模式到价格走势图
+  // 自动标注：当前模式 + 所有 Motif 到价格走势图
   useEffect(() => {
+    const patterns: HighlightedPattern[] = [];
+
+    // 1. 标注所有 Motif（最相似模式对）
+    if (mpResult?.motifs) {
+      mpResult.motifs.forEach((m, i) => {
+        patterns.push({
+          type: 'similar',
+          startDate: m.rawDateA,
+          endDate: rawDates[Math.min(m.idxA + window - 1, rawDates.length - 1)] || m.rawDateA,
+          label: `Motif${i + 1}: ${m.rawDateA}`,
+          color: LINE_COLORS[i % LINE_COLORS.length],
+        });
+      });
+    }
+
+    // 2. 标注当前模式
     if (currentDateRange) {
-      onHighlightPatterns([{
+      patterns.push({
         type: 'current',
         startDate: currentDateRange.start,
         endDate: currentDateRange.end,
         label: `当前${window}天`,
-        color: '#a855f7', // purple
-      }]);
+        color: '#a855f7',
+      });
     }
-  }, [currentDateRange, window]);
 
-  // 点击相似模式 -> 在走势图中标注
+    onHighlightPatterns(patterns);
+  }, [mpResult, currentDateRange, window, rawDates]);
+
+  // 点击相似模式 -> 在走势图中标注（保留手动标注功能）
   const handleShowInChart = useCallback((index: number) => {
     const sp = similarPatterns[index];
     const range = similarDateRanges[index];
@@ -226,19 +244,20 @@ export default function MatrixProfilePanel({ data, onHighlightPatterns }: Props)
         </div>
       </div>
 
-      {/* Motif 信息 */}
+      {/* Motif 信息 - 显示完整年月日 */}
       {mpResult && mpResult.motifs.length > 0 && (
         <div className="border-t border-slate-700 px-4 py-3">
           <p className="text-xs text-slate-400 mb-2 flex items-center gap-1.5">
-            <GitCompare className="w-3 h-3" /> 最相似模式对（Motif）
+            <GitCompare className="w-3 h-3" /> 最相似模式对（Motif）— 已自动标注在价格走势图中
           </p>
           <div className="space-y-1.5">
             {mpResult.motifs.map((m, i) => (
-              <div key={i} className="flex items-center gap-3 text-xs bg-slate-700/20 rounded px-2 py-1.5">
+              <div key={i} className="flex items-center gap-3 text-xs bg-slate-700/20 rounded px-2 py-1.5 flex-wrap">
                 <span className="text-slate-500 w-4">#{i + 1}</span>
-                <span className="text-amber-300">{m.dateA}</span>
+                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: LINE_COLORS[i % LINE_COLORS.length] }} />
+                <span className="text-amber-300 font-medium">{m.rawDateA}</span>
                 <span className="text-slate-600">↔</span>
-                <span className="text-amber-300">{m.dateB}</span>
+                <span className="text-amber-300 font-medium">{m.rawDateB}</span>
                 <span className="text-slate-500">距离: {m.distance.toFixed(3)}</span>
                 <span className="text-purple-400 font-medium">相似度: {(m.similarity * 100).toFixed(1)}%</span>
               </div>
