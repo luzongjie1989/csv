@@ -1,25 +1,30 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Search, AlertTriangle, GitCompare } from 'lucide-react';
+import { Search, AlertTriangle, GitCompare, Eye } from 'lucide-react';
 import { calculateMatrixProfile, findSimilarPatterns } from '@/utils/matrixProfile';
 import { fmtPct } from '@/utils/seasonalStats';
 import { parseDate } from '@/utils/seasonalStats';
 import type { ParsedCSV } from '@/types';
+import type { HighlightedPattern } from '@/types/chart';
 
-interface Props { data: ParsedCSV; }
+interface Props {
+  data: ParsedCSV;
+  onHighlightPatterns: (patterns: HighlightedPattern[]) => void;
+}
 
 const WINDOW_OPTIONS = [10, 15, 20, 30, 40, 60];
 const LINE_COLORS = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
 
-export default function MatrixProfilePanel({ data }: Props) {
+export default function MatrixProfilePanel({ data, onHighlightPatterns }: Props) {
   const [window, setWindow] = useState(20);
   const [topN, setTopN] = useState(5);
 
-  // 提取收盘价和日期
-  const { prices, dates } = useMemo(() => {
+  // 提取收盘价和日期（原始格式用于标注联动）
+  const { prices, dates, rawDates } = useMemo(() => {
     const p: number[] = [];
-    const d: string[] = [];
-    if (!data.closeColumn || !data.dateColumn) return { prices: p, dates: d };
+    const d: string[] = [];       // 显示用 M/D
+    const rd: string[] = [];      // 原始日期格式（用于走势图联动匹配）
+    if (!data.closeColumn || !data.dateColumn) return { prices: p, dates: d, rawDates: rd };
     for (const row of data.rows) {
       const c = parseFloat(row[data.closeColumn!] || '');
       const dateStr = row[data.dateColumn!] || '';
@@ -27,9 +32,10 @@ export default function MatrixProfilePanel({ data }: Props) {
       if (!isNaN(c) && c > 0 && parsed) {
         p.push(c);
         d.push(`${parsed.month}/${parsed.day}`);
+        rd.push(dateStr.trim());   // 保留原始格式用于匹配
       }
     }
-    return { prices: p, dates: d };
+    return { prices: p, dates: d, rawDates: rd };
   }, [data]);
 
   // Matrix Profile 计算
@@ -52,15 +58,75 @@ export default function MatrixProfilePanel({ data }: Props) {
     return slice.map(p => (p / first) * 100);
   }, [prices, window]);
 
-  // 为Recharts准备数据（当前模式 + 相似模式）
+  // 当前模式的原始日期范围（用于联动标注）
+  const currentDateRange = useMemo(() => {
+    if (rawDates.length < window) return null;
+    return {
+      start: rawDates[rawDates.length - window],
+      end: rawDates[rawDates.length - 1],
+    };
+  }, [rawDates, window]);
+
+  // 相似模式的原始日期范围
+  const similarDateRanges = useMemo(() => {
+    return similarPatterns.map(sp => {
+      const idx = dates.findIndex(d => d === sp.startDate);
+      if (idx >= 0 && idx < rawDates.length) {
+        const endIdx = Math.min(idx + window - 1, rawDates.length - 1);
+        return { start: rawDates[idx], end: rawDates[endIdx] };
+      }
+      return null;
+    });
+  }, [similarPatterns, dates, rawDates, window]);
+
+  // 自动标注当前模式到价格走势图
+  useEffect(() => {
+    if (currentDateRange) {
+      onHighlightPatterns([{
+        type: 'current',
+        startDate: currentDateRange.start,
+        endDate: currentDateRange.end,
+        label: `当前${window}天`,
+        color: '#a855f7', // purple
+      }]);
+    }
+  }, [currentDateRange, window]);
+
+  // 点击相似模式 -> 在走势图中标注
+  const handleShowInChart = useCallback((index: number) => {
+    const sp = similarPatterns[index];
+    const range = similarDateRanges[index];
+    if (!sp || !range) return;
+
+    const patterns: HighlightedPattern[] = [];
+    // 始终显示当前模式
+    if (currentDateRange) {
+      patterns.push({
+        type: 'current',
+        startDate: currentDateRange.start,
+        endDate: currentDateRange.end,
+        label: `当前${window}天`,
+        color: '#a855f7',
+      });
+    }
+    // 添加选中的相似模式
+    patterns.push({
+      type: 'similar',
+      startDate: range.start,
+      endDate: range.end,
+      label: `相似${index + 1}: ${sp.startDate}~${sp.endDate}`,
+      color: LINE_COLORS[index % LINE_COLORS.length],
+    });
+
+    onHighlightPatterns(patterns);
+  }, [similarPatterns, similarDateRanges, currentDateRange, window, onHighlightPatterns]);
+
+  // 为Recharts准备数据
   const chartData = useMemo(() => {
     const data: any[] = [];
-    const maxLen = Math.max(window, ...similarPatterns.map(s => s.normalizedPattern.length));
-    for (let i = 0; i < maxLen; i++) {
+    for (let i = 0; i < window; i++) {
       const point: any = { day: i + 1 };
-      // 当前模式
       point['当前模式'] = i < currentPattern.length ? currentPattern[i] : null;
-      // 相似模式
       similarPatterns.forEach((sp, idx) => {
         point[`相似${idx + 1}`] = i < sp.normalizedPattern.length ? sp.normalizedPattern[i] : null;
       });
@@ -135,7 +201,14 @@ export default function MatrixProfilePanel({ data }: Props) {
       <div className="px-4 py-4">
         <div className="flex items-center gap-2 mb-2">
           <Search className="w-3.5 h-3.5 text-purple-400" />
-          <p className="text-purple-300 text-xs">最近 {window} 天走势 vs 历史最相似 {topN} 个片段</p>
+          <p className="text-purple-300 text-xs">
+            最近 {window} 天走势 vs 历史最相似 {Math.min(topN, similarPatterns.length)} 个片段
+          </p>
+          {currentDateRange && (
+            <span className="text-[10px] text-slate-500 ml-2">
+              (当前: {currentDateRange.start} ~ {currentDateRange.end})
+            </span>
+          )}
         </div>
         <div className="w-full" style={{ height: 300 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -143,10 +216,8 @@ export default function MatrixProfilePanel({ data }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={{ stroke: '#475569' }} tickLine={false} />
               <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={{ stroke: '#475569' }} tickLine={false} domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(0)} />
-              <Tooltip content={<MPTooltip similarPatterns={similarPatterns} window={window} />} />
-              {/* 当前模式 - 粗实线 */}
+              <Tooltip content={<MPTooltip similarPatterns={similarPatterns} />} />
               <Line type="monotone" dataKey="当前模式" stroke="#ffffff" strokeWidth={3} dot={false} />
-              {/* 相似模式 - 细虚线 */}
               {similarPatterns.map((_, i) => (
                 <Line key={`相似${i + 1}`} type="monotone" dataKey={`相似${i + 1}`} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3" dot={false} />
               ))}
@@ -190,12 +261,12 @@ export default function MatrixProfilePanel({ data }: Props) {
         </div>
       )}
 
-      {/* 相似模式详情表 */}
+      {/* 相似模式详情表 - 带联动按钮 */}
       <div className="border-t border-slate-700 px-4 py-3">
-        <p className="text-xs text-slate-400 mb-2">相似片段详情（基于最近 {window} 天走势）</p>
+        <p className="text-xs text-slate-400 mb-2">相似片段详情（点击"在走势图中查看"可联动标注）</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
           {similarPatterns.map((sp, i) => (
-            <div key={i} className="bg-slate-700/20 rounded-lg p-2.5 border border-slate-700/30">
+            <div key={i} className="bg-slate-700/20 rounded-lg p-2.5 border border-slate-700/30 relative group">
               <div className="flex items-center gap-1.5 mb-1.5">
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: LINE_COLORS[i % LINE_COLORS.length] }} />
                 <span className="text-xs font-medium text-slate-300">相似 #{i + 1}</span>
@@ -209,6 +280,14 @@ export default function MatrixProfilePanel({ data }: Props) {
                   {sp.futureReturn !== 0 ? fmtPct(sp.futureReturn) : '无数据'}
                 </p>
               </div>
+              {/* 联动按钮 */}
+              <button
+                onClick={() => handleShowInChart(i)}
+                className="mt-2 w-full flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-colors"
+              >
+                <Eye className="w-3 h-3" />
+                在走势图中查看
+              </button>
             </div>
           ))}
         </div>
@@ -218,12 +297,12 @@ export default function MatrixProfilePanel({ data }: Props) {
 }
 
 /** Tooltip */
-function MPTooltip({ active, payload, similarPatterns, window }: any) {
+function MPTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const day = payload[0].payload.day;
   return (
     <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 shadow-xl min-w-[160px]">
-      <p className="text-slate-400 text-xs mb-1">第{day}天 / 共{window}天</p>
+      <p className="text-slate-400 text-xs mb-1">第{day}天 / 共{payload[0].payload.__TOTAL_DAYS__ || ''}天</p>
       {payload.filter((p: any) => p.value != null).map((p: any, i: number) => {
         const isCurrent = p.dataKey === '当前模式';
         return (
@@ -235,11 +314,6 @@ function MPTooltip({ active, payload, similarPatterns, window }: any) {
           </div>
         );
       })}
-      {similarPatterns[0] && (
-        <p className="text-[9px] text-slate-500 mt-1 pt-1 border-t border-slate-700/30">
-          最相似: {similarPatterns[0].startDate}~{similarPatterns[0].endDate} ({(similarPatterns[0].similarity * 100).toFixed(1)}%)
-        </p>
-      )}
     </div>
   );
 }

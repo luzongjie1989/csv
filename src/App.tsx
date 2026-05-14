@@ -13,6 +13,7 @@ import SeasonalAnalysis from '@/components/SeasonalAnalysis';
 import MatrixProfilePanel from '@/components/MatrixProfilePanel';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
+import type { HighlightedPattern } from '@/types/chart';
 
 type ViewTab = 'preview' | 'classical' | 'seasonal' | 'matrixProfile';
 
@@ -21,11 +22,15 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const { handleFileUpload } = useCSVParser();
 
+  // 价格走势图中高亮标注的模式（来自相似序列识别的联动）
+  const [highlightedPatterns, setHighlightedPatterns] = useState<HighlightedPattern[]>([]);
+
   const onFileSelect = useCallback(async (file: File) => {
     setIsUploading(true);
     try {
       const result = await handleFileUpload(file);
       setUploadedFile(result);
+      setHighlightedPatterns([]); // 新文件清空标注
     } catch (err) {
       console.error('上传失败:', err);
       alert('文件处理失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -36,6 +41,7 @@ export default function App() {
 
   const handleClear = useCallback(() => {
     setUploadedFile(null);
+    setHighlightedPatterns([]);
   }, []);
 
   const handleHeaderUpload = useCallback(() => {
@@ -127,10 +133,16 @@ export default function App() {
                   <DataCards data={uploadedFile.data} />
 
                   {/* 价格走势图 - 页面顶端独立模块（所有标签页可见） */}
-                  {isStockData && <CSVChart data={uploadedFile.data} />}
+                  {isStockData && (
+                    <CSVChart
+                      data={uploadedFile.data}
+                      highlightedPatterns={highlightedPatterns}
+                      onClearPatterns={() => setHighlightedPatterns([])}
+                    />
+                  )}
 
                   {/* Tab Switcher */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <button
                       onClick={() => setViewTab('preview')}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -203,7 +215,10 @@ export default function App() {
                   {/* 相似序列识别标签页 */}
                   {viewTab === 'matrixProfile' && (
                     <div className="space-y-8">
-                      <MatrixProfilePanel data={uploadedFile.data} />
+                      <MatrixProfilePanel
+                        data={uploadedFile.data}
+                        onHighlightPatterns={setHighlightedPatterns}
+                      />
                     </div>
                   )}
 
