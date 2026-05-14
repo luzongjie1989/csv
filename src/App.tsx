@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BarChart3, Upload, Table2, ScrollText, TrendingUp } from 'lucide-react';
+import { BarChart3, Upload, Table2, ScrollText, TrendingUp, GitCompare } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
@@ -10,10 +10,11 @@ import StatisticsPanel from '@/components/StatisticsPanel';
 import GanZhiChart from '@/components/GanZhiChart';
 import PredictionPanel from '@/components/PredictionPanel';
 import SeasonalAnalysis from '@/components/SeasonalAnalysis';
+import MatrixProfilePanel from '@/components/MatrixProfilePanel';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
 
-type ViewTab = 'preview' | 'classical' | 'seasonal';
+type ViewTab = 'preview' | 'classical' | 'seasonal' | 'matrixProfile';
 
 export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
@@ -163,6 +164,17 @@ export default function App() {
                       <TrendingUp className="w-4 h-4" />
                       季节性分析
                     </button>
+                    <button
+                      onClick={() => setViewTab('matrixProfile')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        viewTab === 'matrixProfile'
+                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
+                      }`}
+                    >
+                      <GitCompare className="w-4 h-4" />
+                      相似序列识别
+                    </button>
                   </div>
 
                   {/* 数据预览标签页 */}
@@ -185,6 +197,13 @@ export default function App() {
                   {viewTab === 'seasonal' && (
                     <div className="space-y-8">
                       <SeasonalAnalysis data={uploadedFile.data} />
+                    </div>
+                  )}
+
+                  {/* 相似序列识别标签页 */}
+                  {viewTab === 'matrixProfile' && (
+                    <div className="space-y-8">
+                      <MatrixProfilePanel data={uploadedFile.data} />
                     </div>
                   )}
 
