@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BarChart3, Upload, Table2, ScrollText, TrendingUp, GitCompare } from 'lucide-react';
+import { BarChart3, Upload, Table2, ScrollText, TrendingUp } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
@@ -10,27 +10,21 @@ import StatisticsPanel from '@/components/StatisticsPanel';
 import GanZhiChart from '@/components/GanZhiChart';
 import PredictionPanel from '@/components/PredictionPanel';
 import SeasonalAnalysis from '@/components/SeasonalAnalysis';
-import MatrixProfilePanel from '@/components/MatrixProfilePanel';
 import { useCSVParser } from '@/hooks/useCSVParser';
 import type { UploadedFile } from '@/types';
-import type { HighlightedPattern } from '@/types/chart';
 
-type ViewTab = 'preview' | 'classical' | 'seasonal' | 'matrixProfile';
+type ViewTab = 'preview' | 'classical' | 'seasonal';
 
 export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const { handleFileUpload } = useCSVParser();
 
-  // 价格走势图中高亮标注的模式（来自相似序列识别的联动）
-  const [highlightedPatterns, setHighlightedPatterns] = useState<HighlightedPattern[]>([]);
-
   const onFileSelect = useCallback(async (file: File) => {
     setIsUploading(true);
     try {
       const result = await handleFileUpload(file);
       setUploadedFile(result);
-      setHighlightedPatterns([]); // 新文件清空标注
     } catch (err) {
       console.error('上传失败:', err);
       alert('文件处理失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -41,7 +35,6 @@ export default function App() {
 
   const handleClear = useCallback(() => {
     setUploadedFile(null);
-    setHighlightedPatterns([]);
   }, []);
 
   const handleHeaderUpload = useCallback(() => {
@@ -132,13 +125,9 @@ export default function App() {
                 <div className="space-y-6">
                   <DataCards data={uploadedFile.data} />
 
-                  {/* 价格走势图 - 页面顶端独立模块（所有标签页可见） */}
+                  {/* 价格走势图 */}
                   {isStockData && (
-                    <CSVChart
-                      data={uploadedFile.data}
-                      highlightedPatterns={highlightedPatterns}
-                      onClearPatterns={() => setHighlightedPatterns([])}
-                    />
+                    <CSVChart data={uploadedFile.data} />
                   )}
 
                   {/* Tab Switcher */}
@@ -176,17 +165,6 @@ export default function App() {
                       <TrendingUp className="w-4 h-4" />
                       季节性分析
                     </button>
-                    <button
-                      onClick={() => setViewTab('matrixProfile')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        viewTab === 'matrixProfile'
-                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 border border-transparent'
-                      }`}
-                    >
-                      <GitCompare className="w-4 h-4" />
-                      相似序列识别
-                    </button>
                   </div>
 
                   {/* 数据预览标签页 */}
@@ -209,16 +187,6 @@ export default function App() {
                   {viewTab === 'seasonal' && (
                     <div className="space-y-8">
                       <SeasonalAnalysis data={uploadedFile.data} />
-                    </div>
-                  )}
-
-                  {/* 相似序列识别标签页 */}
-                  {viewTab === 'matrixProfile' && (
-                    <div className="space-y-8">
-                      <MatrixProfilePanel
-                        data={uploadedFile.data}
-                        onHighlightPatterns={setHighlightedPatterns}
-                      />
                     </div>
                   )}
 
