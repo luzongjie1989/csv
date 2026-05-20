@@ -9,11 +9,11 @@ import type { HighlightedPattern, ScaleType } from '@/types/chart';
 
 interface CSVChartProps {
   data: ParsedCSV;
-  highlightedPatterns: HighlightedPattern[];
-  onClearPatterns: () => void;
+  highlightedPatterns?: HighlightedPattern[];
+  onClearPatterns?: () => void;
 }
 
-export default function CSVChart({ data, highlightedPatterns, onClearPatterns }: CSVChartProps) {
+export default function CSVChart({ data, highlightedPatterns = [], onClearPatterns }: CSVChartProps) {
   const [scaleType, setScaleType] = useState<ScaleType>('linear');
   // Brush 范围（用于自动适配 Motif 画面）
   const [brushRange, setBrushRange] = useState<{ startIndex?: number; endIndex?: number }>({});
