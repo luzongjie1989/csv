@@ -58,10 +58,12 @@ export interface UnderwaterPoint {
   drawdownPct: number;
 }
 
+/** 最小回撤阈值（绝对值小于此值的回撤视为噪音） */
+export const MIN_DRAWDOWN_PCT = -3;
+
 /** 跌幅区间定义 */
 const CATEGORIES: { label: string; min: number; max: number; color: string; bgColor: string }[] = [
-  { label: '微调', min: 0, max: -5, color: '#10b981', bgColor: 'rgba(16,185,129,0.15)' },
-  { label: '小幅', min: -5, max: -10, color: '#3b82f6', bgColor: 'rgba(59,130,246,0.15)' },
+  { label: '小幅', min: -3, max: -10, color: '#3b82f6', bgColor: 'rgba(59,130,246,0.15)' },
   { label: '中幅', min: -10, max: -20, color: '#f59e0b', bgColor: 'rgba(245,158,11,0.15)' },
   { label: '大幅', min: -20, max: -30, color: '#f97316', bgColor: 'rgba(249,115,22,0.15)' },
   { label: '暴跌', min: -30, max: -50, color: '#ef4444', bgColor: 'rgba(239,68,68,0.15)' },
@@ -210,6 +212,13 @@ export function calcUnderwaterCurve(data: ParsedCSV): UnderwaterPoint[] {
   });
 
   return result;
+}
+
+/**
+ * 过滤掉噪音回撤（跌幅绝对值 < 3%）
+ */
+export function filterNoise(drawdowns: DrawdownRecord[]): DrawdownRecord[] {
+  return drawdowns.filter(d => d.drawdownPct <= MIN_DRAWDOWN_PCT);
 }
 
 /**

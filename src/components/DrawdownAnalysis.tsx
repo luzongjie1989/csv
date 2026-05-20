@@ -6,7 +6,7 @@ import {
 import { Activity, BarChart3, GitPullRequest, List } from 'lucide-react';
 import {
   identifyDrawdowns, calcUnderwaterCurve, classifyDrawdowns,
-  getMaxDrawdown, getCurrentDrawdown, fmtDrawdownPct,
+  getMaxDrawdown, getCurrentDrawdown, fmtDrawdownPct, filterNoise,
   type DrawdownRecord, type DrawdownCategory, type UnderwaterPoint,
 } from '@/utils/drawdownStats';
 import type { ParsedCSV } from '@/types';
@@ -24,8 +24,10 @@ const TABS: { key: SubTab; label: string; icon: typeof Activity }[] = [
 
 export default function DrawdownAnalysis({ data }: Props) {
   const [tab, setTab] = useState<SubTab>('underwater');
+  const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
 
-  const drawdowns = useMemo(() => identifyDrawdowns(data), [data]);
+  const rawDrawdowns = useMemo(() => identifyDrawdowns(data), [data]);
+  const drawdowns = useMemo(() => filterNoise(rawDrawdowns), [rawDrawdowns]);
   const underwaterData = useMemo(() => calcUnderwaterCurve(data), [data]);
   const categories = useMemo(() => classifyDrawdowns(drawdowns), [drawdowns]);
   const maxDD = useMemo(() => getMaxDrawdown(drawdowns), [drawdowns]);
@@ -78,18 +80,32 @@ export default function DrawdownAnalysis({ data }: Props) {
       {/* 分类概览条 */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <h3 className="text-white font-medium text-sm mb-3">跌幅分类统计</h3>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {categories.map(cat => (
             <div
               key={cat.label}
-              className="rounded-lg p-3 text-center"
-              style={{ backgroundColor: cat.bgColor }}
+              className={`rounded-lg p-3 text-center transition-all duration-200 ${
+                highlightedLabel === cat.label ? 'ring-2 ring-offset-1 ring-offset-slate-800' : ''
+              }`}
+              style={{
+                backgroundColor: cat.bgColor,
+                ...(highlightedLabel === cat.label ? { ringColor: cat.color } : {}),
+              }}
             >
               <div className="flex items-center justify-center gap-1.5 mb-1">
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
                 <span className="text-xs font-medium" style={{ color: cat.color }}>{cat.label}</span>
               </div>
-              <p className="text-white text-lg font-bold">{cat.count}</p>
+              <button
+                onClick={() => {
+                  setHighlightedLabel(prev => prev === cat.label ? null : cat.label);
+                  setTab('table');
+                }}
+                className="text-white text-lg font-bold hover:underline underline-offset-2 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                disabled={cat.count === 0}
+              >
+                {cat.count}
+              </button>
               <p className="text-slate-400 text-[10px] mt-0.5">
                 {cat.count > 0 ? `均跌${cat.avgDrawdown.toFixed(1)}%` : '-'}
               </p>
@@ -99,6 +115,17 @@ export default function DrawdownAnalysis({ data }: Props) {
             </div>
           ))}
         </div>
+        {highlightedLabel && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-slate-400 text-xs">已筛选: <span className="text-white font-medium">{highlightedLabel}</span></span>
+            <button
+              onClick={() => setHighlightedLabel(null)}
+              className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2"
+            >
+              清除
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 子标签切换 */}
@@ -127,7 +154,7 @@ export default function DrawdownAnalysis({ data }: Props) {
           {tab === 'underwater' && <UnderwaterChart data={underwaterData} drawdowns={drawdowns} />}
           {tab === 'distribution' && <DistributionChart categories={categories} />}
           {tab === 'scatter' && <ScatterPlot drawdowns={drawdowns} />}
-          {tab === 'table' && <DetailTable drawdowns={drawdowns} categories={categories} />}
+          {tab === 'table' && <DetailTable drawdowns={drawdowns} categories={categories} highlightedLabel={highlightedLabel} />}
         </div>
       </div>
     </div>
@@ -319,7 +346,6 @@ function ScatterPlot({ drawdowns }: { drawdowns: DrawdownRecord[] }) {
 
   // 颜色映射
   const getPointColor = (pct: number): string => {
-    if (pct > -5) return '#10b981';
     if (pct > -10) return '#3b82f6';
     if (pct > -20) return '#f59e0b';
     if (pct > -30) return '#f97316';
@@ -375,8 +401,7 @@ function ScatterPlot({ drawdowns }: { drawdowns: DrawdownRecord[] }) {
       {/* 图例 */}
       <div className="flex flex-wrap gap-3 mt-2">
         {[
-          { label: '微调(-5%内)', color: '#10b981' },
-          { label: '小幅(-5~-10%)', color: '#3b82f6' },
+          { label: '小幅(-3~-10%)', color: '#3b82f6' },
           { label: '中幅(-10~-20%)', color: '#f59e0b' },
           { label: '大幅(-20~-30%)', color: '#f97316' },
           { label: '暴跌(-30~-50%)', color: '#ef4444' },
@@ -410,12 +435,20 @@ function ScatterTooltip({ active, payload }: any) {
 }
 
 /* ============ 模块4: 明细表 ============ */
-function DetailTable({ drawdowns, categories }: { drawdowns: DrawdownRecord[]; categories: DrawdownCategory[] }) {
+function DetailTable({ drawdowns, categories, highlightedLabel }: { drawdowns: DrawdownRecord[]; categories: DrawdownCategory[]; highlightedLabel: string | null }) {
   const [sortBy, setSortBy] = useState<'drawdownPct' | 'durationDays' | 'peakDate'>('drawdownPct');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
+  // 根据 highlightedLabel 筛选或展示全部
+  const filteredDrawdowns = useMemo(() => {
+    if (!highlightedLabel) return drawdowns;
+    const cat = categories.find(c => c.label === highlightedLabel);
+    if (!cat) return drawdowns;
+    return cat.records;
+  }, [drawdowns, categories, highlightedLabel]);
+
   const sorted = useMemo(() => {
-    const copy = [...drawdowns];
+    const copy = [...filteredDrawdowns];
     copy.sort((a, b) => {
       const va = a[sortBy];
       const vb = b[sortBy];
@@ -425,7 +458,7 @@ function DetailTable({ drawdowns, categories }: { drawdowns: DrawdownRecord[]; c
       return sortDir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number);
     });
     return copy;
-  }, [drawdowns, sortBy, sortDir]);
+  }, [filteredDrawdowns, sortBy, sortDir]);
 
   const getCategoryColor = (pct: number): string => {
     const cat = categories.find(c => {
@@ -433,6 +466,15 @@ function DetailTable({ drawdowns, categories }: { drawdowns: DrawdownRecord[]; c
       return pct <= c.min && pct > c.max;
     });
     return cat?.color || '#94a3b8';
+  };
+
+  // 判断某行是否属于高亮分类
+  const isHighlighted = (dd: DrawdownRecord): boolean => {
+    if (!highlightedLabel) return false;
+    const cat = categories.find(c => c.label === highlightedLabel);
+    if (!cat) return false;
+    if (cat.max === -Infinity) return dd.drawdownPct <= cat.min;
+    return dd.drawdownPct <= cat.min && dd.drawdownPct > cat.max;
   };
 
   const toggleSort = (col: typeof sortBy) => {
@@ -461,7 +503,11 @@ function DetailTable({ drawdowns, categories }: { drawdowns: DrawdownRecord[]; c
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h4 className="text-white font-medium text-sm">回撤明细</h4>
-          <p className="text-slate-500 text-xs">共 {drawdowns.length} 次回撤，点击列头排序</p>
+          <p className="text-slate-500 text-xs">
+            共 {filteredDrawdowns.length} 次回撤
+            {highlightedLabel && <span className="text-white">（筛选: {highlightedLabel}）</span>}
+            ，点击列头排序
+          </p>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -480,30 +526,39 @@ function DetailTable({ drawdowns, categories }: { drawdowns: DrawdownRecord[]; c
             </tr>
           </thead>
           <tbody>
-            {sorted.map((dd, i) => (
-              <tr
-                key={i}
-                className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors"
-              >
-                <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
-                <td className="px-3 py-2 text-slate-300 text-xs">{dd.peakDate}</td>
-                <td className="px-3 py-2 text-slate-300 text-xs">{dd.troughDate}</td>
-                <td className="px-3 py-2 text-xs font-bold" style={{ color: getCategoryColor(dd.drawdownPct) }}>
-                  {fmtDrawdownPct(dd.drawdownPct)}
-                </td>
-                <td className="px-3 py-2 text-slate-300 text-xs">{dd.durationDays}</td>
-                <td className="px-3 py-2 text-slate-300 text-xs">{dd.declinePoints.toFixed(2)}</td>
-                <td className="px-3 py-2 text-slate-300 text-xs">{dd.recoveryDate || '-'}</td>
-                <td className="px-3 py-2 text-slate-300 text-xs">{dd.recoveryDays ?? '-'}</td>
-                <td className="px-3 py-2 text-xs">
-                  {dd.isRecovered ? (
-                    <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[10px]">已恢复</span>
-                  ) : (
-                    <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] animate-pulse">进行中</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {sorted.map((dd, i) => {
+              const highlighted = isHighlighted(dd);
+              return (
+                <tr
+                  key={i}
+                  className={`border-b border-slate-700/50 transition-colors ${
+                    highlighted
+                      ? 'bg-rose-500/15 hover:bg-rose-500/25'
+                      : highlightedLabel
+                        ? 'opacity-30 hover:opacity-60'
+                        : 'hover:bg-slate-700/20'
+                  }`}
+                >
+                  <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
+                  <td className="px-3 py-2 text-slate-300 text-xs">{dd.peakDate}</td>
+                  <td className="px-3 py-2 text-slate-300 text-xs">{dd.troughDate}</td>
+                  <td className="px-3 py-2 text-xs font-bold" style={{ color: getCategoryColor(dd.drawdownPct) }}>
+                    {fmtDrawdownPct(dd.drawdownPct)}
+                  </td>
+                  <td className="px-3 py-2 text-slate-300 text-xs">{dd.durationDays}</td>
+                  <td className="px-3 py-2 text-slate-300 text-xs">{dd.declinePoints.toFixed(2)}</td>
+                  <td className="px-3 py-2 text-slate-300 text-xs">{dd.recoveryDate || '-'}</td>
+                  <td className="px-3 py-2 text-slate-300 text-xs">{dd.recoveryDays ?? '-'}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {dd.isRecovered ? (
+                      <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[10px]">已恢复</span>
+                    ) : (
+                      <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] animate-pulse">进行中</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
