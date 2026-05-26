@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react';
 import Papa from 'papaparse';
 import * as jschardet from 'jschardet';
-import { solarToGanZhi } from '@/utils/lunarCalendar';
-import { getSolarTermForDate } from '@/utils/solarTerms';
-import type { ParsedCSV, UploadedFile, GanZhiInfo, SolarTermInfo } from '@/types';
+import type { ParsedCSV, UploadedFile } from '@/types';
 
 function detectDelimiter(text: string): string {
   const lines = text.split('\n').filter(l => l.trim() !== '');
@@ -174,27 +172,6 @@ export function useCSVParser() {
         const dateColumn = detectDateColumn(headers);
         const closeColumn = detectCloseColumn(headers);
 
-        const ganZhiMap = new Map<number, GanZhiInfo>();
-        const solarTermMap = new Map<number, SolarTermInfo>();
-        
-        if (dateColumn) {
-          rows.forEach((row, idx) => {
-            const dateValue = row[dateColumn];
-            if (dateValue) {
-              // Gan-Zhi conversion
-              const gz = solarToGanZhi(dateValue);
-              if (gz) {
-                ganZhiMap.set(idx, gz);
-              }
-              // Solar term conversion
-              const st = getSolarTermForDate(dateValue);
-              if (st) {
-                solarTermMap.set(idx, st);
-              }
-            }
-          });
-        }
-
         const parsed: ParsedCSV = {
           headers,
           rows,
@@ -203,8 +180,6 @@ export function useCSVParser() {
           detectedFormat,
           dateColumn,
           closeColumn,
-          ganZhiMap: ganZhiMap.size > 0 ? ganZhiMap : undefined,
-          solarTermMap: solarTermMap.size > 0 ? solarTermMap : undefined,
         };
 
         setIsParsing(false);

@@ -24,18 +24,28 @@ export default function CSVChart({ data, highlightedPatterns = [], onClearPatter
 
     if (!dateColumn || !closeColumn) return result;
 
-    let firstClose = 0;
+    // 只提取图表需要的列（close + OHLC），不遍历全部header
+    const chartColumns = new Set<string>();
+    chartColumns.add(closeColumn);
+    const headerLower = headers.map(h => h.toLowerCase());
+    const ohlcKeys = ['open', 'high', 'low', '开盘', '最高', '最低'];
+    headers.forEach(h => {
+      if (ohlcKeys.includes(h.toLowerCase())) chartColumns.add(h);
+    });
 
-    rows.forEach((row, idx) => {
+    let firstClose = 0;
+    const n = rows.length;
+    for (let i = 0; i < n; i++) {
+      const row = rows[i];
       const dateValue = row[dateColumn];
       const closeValue = parseFloat(row[closeColumn]?.replace(/,/g, ''));
-      if (!dateValue || isNaN(closeValue)) return;
+      if (!dateValue || isNaN(closeValue)) continue;
 
-      if (idx === 0) firstClose = closeValue;
+      if (firstClose === 0) firstClose = closeValue;
 
-      const point: any = { date: dateValue, rawClose: closeValue, idx };
+      const point: any = { date: dateValue, rawClose: closeValue, idx: i };
 
-      // 根据坐标类型转换
+      // 根据坐标类型转换收盘价
       if (scaleType === 'linear') {
         point.close = closeValue;
       } else if (scaleType === 'log') {
@@ -44,24 +54,23 @@ export default function CSVChart({ data, highlightedPatterns = [], onClearPatter
         point.close = firstClose > 0 ? ((closeValue / firstClose) - 1) * 100 : 0;
       }
 
-      // 添加OHLC
-      headers.forEach((header) => {
-        if (header !== dateColumn) {
-          const val = parseFloat(row[header]?.replace(/,/g, ''));
-          if (!isNaN(val)) {
-            if (scaleType === 'linear') {
-              point[header] = val;
-            } else if (scaleType === 'log' && val > 0) {
-              point[header] = Math.log(val);
-            } else if (scaleType === 'percent' && firstClose > 0) {
-              point[header] = ((val / firstClose) - 1) * 100;
-            }
+      // 只对图表需要的列做 scale 转换（OHLC）
+      chartColumns.forEach((header) => {
+        if (header === closeColumn || header === dateColumn) return;
+        const val = parseFloat(row[header]?.replace(/,/g, ''));
+        if (!isNaN(val)) {
+          if (scaleType === 'linear') {
+            point[header] = val;
+          } else if (scaleType === 'log' && val > 0) {
+            point[header] = Math.log(val);
+          } else if (scaleType === 'percent' && firstClose > 0) {
+            point[header] = ((val / firstClose) - 1) * 100;
           }
         }
       });
 
       result.push(point);
-    });
+    }
 
     return result;
   }, [data, scaleType]);

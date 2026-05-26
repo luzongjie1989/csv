@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { BarChart3, Upload, Table2, ScrollText, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState, useCallback, useRef, useMemo } from 'react';
+import { BarChart3, Upload, Table2, ScrollText, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
 import ImagePreview from '@/components/ImagePreview';
@@ -12,6 +12,7 @@ import PredictionPanel from '@/components/PredictionPanel';
 import SeasonalAnalysis from '@/components/SeasonalAnalysis';
 import DrawdownAnalysis from '@/components/DrawdownAnalysis';
 import { useCSVParser } from '@/hooks/useCSVParser';
+import { computeGanZhiMaps, type GanZhiMaps } from '@/utils/gzCompute';
 import type { UploadedFile } from '@/types';
 
 type ViewTab = 'preview' | 'classical' | 'seasonal' | 'drawdown';
@@ -23,6 +24,9 @@ export default function App() {
 
   const onFileSelect = useCallback(async (file: File) => {
     setIsUploading(true);
+    setGzMaps(null);
+    setGzLoading(false);
+    setGzProgress(null);
     try {
       const result = await handleFileUpload(file);
       setUploadedFile(result);
@@ -33,10 +37,6 @@ export default function App() {
       setIsUploading(false);
     }
   }, [handleFileUpload]);
-
-  const handleClear = useCallback(() => {
-    setUploadedFile(null);
-  }, []);
 
   const handleHeaderUpload = useCallback(() => {
     const input = document.createElement('input');
@@ -53,6 +53,56 @@ export default function App() {
 
   const isStockData = uploadedFile?.data?.closeColumn != null;
   const [viewTab, setViewTab] = useState<ViewTab>('preview');
+
+  // 干支/节气延迟计算状态
+  const [gzMaps, setGzMaps] = useState<GanZhiMaps | null>(null);
+  const [gzLoading, setGzLoading] = useState(false);
+  const [gzProgress, setGzProgress] = useState<{ done: number; total: number } | null>(null);
+  const gzComputingRef = useRef(false);
+
+  // 开始延迟计算干支/节气
+  const startGZComputation = useCallback(async () => {
+    if (!uploadedFile?.data || gzMaps || gzComputingRef.current) return;
+    gzComputingRef.current = true;
+    setGzLoading(true);
+    try {
+      const maps = await computeGanZhiMaps(uploadedFile.data, (done, total) => {
+        setGzProgress({ done, total });
+      });
+      setGzMaps(maps);
+    } finally {
+      setGzLoading(false);
+      setGzProgress(null);
+      gzComputingRef.current = false;
+    }
+  }, [uploadedFile?.data, gzMaps]);
+
+  // 切换标签时触发延迟计算
+  const handleSwitchTab = useCallback((tab: ViewTab) => {
+    setViewTab(tab);
+    if (tab === 'classical') {
+      startGZComputation();
+    }
+  }, [startGZComputation]);
+
+  // 清除时重置干支计算状态
+  const handleClear = useCallback(() => {
+    setUploadedFile(null);
+    setGzMaps(null);
+    setGzLoading(false);
+    setGzProgress(null);
+  }, []);
+
+  // 增强的数据对象（包含计算好的干支/节气映射）
+  const classicalData = useMemo(() => {
+    if (!uploadedFile?.data) return undefined;
+    if (!gzMaps) return uploadedFile.data;
+    return {
+      ...uploadedFile.data,
+      ganZhiMap: gzMaps.ganZhiMap,
+      solarTermMap: gzMaps.solarTermMap,
+    };
+  }, [uploadedFile?.data, gzMaps]);
 
   return (
     <div className="min-h-[100dvh] bg-slate-900">
@@ -145,7 +195,7 @@ export default function App() {
                       数据预览
                     </button>
                     <button
-                      onClick={() => setViewTab('classical')}
+                      onClick={() => handleSwitchTab('classical')}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                         viewTab === 'classical'
                           ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
@@ -189,9 +239,36 @@ export default function App() {
                   {/* 古典历法分析标签页 */}
                   {viewTab === 'classical' && (
                     <div className="space-y-8">
-                      {isStockData && <PredictionPanel data={uploadedFile.data} />}
-                      <StatisticsPanel data={uploadedFile.data} />
-                      <GanZhiChart data={uploadedFile.data} />
+                      {gzLoading && (
+                        <div className="flex flex-col items-center justify-center py-12 gap-4">
+                          <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+                          <p className="text-slate-400 text-sm">
+                            正在计算干支/节气数据...
+                            {gzProgress && (
+                              <span className="ml-2 text-amber-400">
+                                {gzProgress.done}/{gzProgress.total}
+                              </span>
+                            )}
+                          </p>
+                          <div className="w-64 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                              style={{
+                                width: gzProgress
+                                  ? `${Math.round((gzProgress.done / gzProgress.total) * 100)}%`
+                                  : '0%',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {!gzLoading && classicalData && (
+                        <>
+                          {isStockData && <PredictionPanel data={classicalData} />}
+                          <StatisticsPanel data={classicalData} />
+                          <GanZhiChart data={classicalData} />
+                        </>
+                      )}
                     </div>
                   )}
 
