@@ -12,11 +12,17 @@ export interface SeasonalStat {
 }
 
 /** 解析后的日期 */
-interface ParsedDate {
+export interface ParsedDate {
   year: number;
   month: number;
   day: number;
   weekday: number;
+}
+
+/** 预计算的时间序列项 */
+export interface SeasonalItem {
+  date: ParsedDate;
+  close: number;
 }
 
 /** 格式化百分比 */
@@ -96,9 +102,9 @@ function calcSegmentReturns(
 /**
  * 提取有效收盘价和日期
  */
-function extractItems(data: ParsedCSV): { date: ParsedDate; close: number }[] | null {
+function extractItems(data: ParsedCSV): SeasonalItem[] | null {
   if (!data.closeColumn || !data.dateColumn) return null;
-  const items: { date: ParsedDate; close: number }[] = [];
+  const items: SeasonalItem[] = [];
   for (const row of data.rows) {
     const c = parseFloat(row[data.closeColumn!] || '');
     const d = parseDate(row[data.dateColumn!] || '');
@@ -113,25 +119,25 @@ function extractItems(data: ParsedCSV): { date: ParsedDate; close: number }[] | 
 // ==================== 全部数据 ====================
 
 /** 月度效应 - 全部 */
-export function calcMonthlyStats(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
+export function calcMonthlyStats(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const items = precomputed ?? extractItems(data);
+  if (!items || items.length < 2) return null;
   const groups = calcSegmentReturns(items, d => `${d.month}月`);
   return toStats(['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], groups);
 }
 
 /** 季度效应 - 全部 */
-export function calcQuarterlyStats(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
+export function calcQuarterlyStats(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const items = precomputed ?? extractItems(data);
+  if (!items || items.length < 2) return null;
   const groups = calcSegmentReturns(items, d => `Q${Math.ceil(d.month / 3)}`);
   return toStats(['Q1','Q2','Q3','Q4'], groups);
 }
 
 /** 星期效应 - 全部 */
-export function calcWeeklyStats(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
+export function calcWeeklyStats(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const items = precomputed ?? extractItems(data);
+  if (!items || items.length < 2) return null;
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const groups = new Map<string, number[]>();
   for (let i = 1; i < items.length; i++) {
@@ -147,9 +153,9 @@ export function calcWeeklyStats(data: ParsedCSV): SeasonalStat[] | null {
 }
 
 /** 年度尾数 - 全部（不分类） */
-export function calcYearTailStats(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
+export function calcYearTailStats(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const items = precomputed ?? extractItems(data);
+  if (!items || items.length < 2) return null;
   const groups = calcSegmentReturns(items, d => `尾数${d.year % 10}`);
   return toStats(['尾数0','尾数1','尾数2','尾数3','尾数4','尾数5','尾数6','尾数7','尾数8','尾数9'], groups);
 }
@@ -157,36 +163,36 @@ export function calcYearTailStats(data: ParsedCSV): SeasonalStat[] | null {
 // ==================== 奇数年 ====================
 
 /** 月度效应 - 奇数年 */
-export function calcMonthlyStatsOdd(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
-  const oddItems = items.filter(item => item.date.year % 2 === 1);
-  if (oddItems.length < 2) return null;
-  const groups = calcSegmentReturns(oddItems, d => `${d.month}月`);
+export function calcMonthlyStatsOdd(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const allItems = precomputed ?? extractItems(data);
+  if (!allItems || allItems.length < 2) return null;
+  const items = allItems.filter(item => item.date.year % 2 === 1);
+  if (items.length < 2) return null;
+  const groups = calcSegmentReturns(items, d => `${d.month}月`);
   return toStats(['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], groups);
 }
 
 /** 季度效应 - 奇数年 */
-export function calcQuarterlyStatsOdd(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
-  const oddItems = items.filter(item => item.date.year % 2 === 1);
-  if (oddItems.length < 2) return null;
-  const groups = calcSegmentReturns(oddItems, d => `Q${Math.ceil(d.month / 3)}`);
+export function calcQuarterlyStatsOdd(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const allItems = precomputed ?? extractItems(data);
+  if (!allItems || allItems.length < 2) return null;
+  const items = allItems.filter(item => item.date.year % 2 === 1);
+  if (items.length < 2) return null;
+  const groups = calcSegmentReturns(items, d => `Q${Math.ceil(d.month / 3)}`);
   return toStats(['Q1','Q2','Q3','Q4'], groups);
 }
 
 /** 星期效应 - 奇数年 */
-export function calcWeeklyStatsOdd(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
-  const oddItems = items.filter(item => item.date.year % 2 === 1);
-  if (oddItems.length < 2) return null;
+export function calcWeeklyStatsOdd(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const allItems = precomputed ?? extractItems(data);
+  if (!allItems || allItems.length < 2) return null;
+  const items = allItems.filter(item => item.date.year % 2 === 1);
+  if (items.length < 2) return null;
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const groups = new Map<string, number[]>();
-  for (let i = 1; i < oddItems.length; i++) {
-    const prev = oddItems[i - 1];
-    const curr = oddItems[i];
+  for (let i = 1; i < items.length; i++) {
+    const prev = items[i - 1];
+    const curr = items[i];
     if (curr.close <= 0 || prev.close <= 0) continue;
     const r = (curr.close - prev.close) / prev.close;
     const key = weekDays[curr.date.weekday];
@@ -199,36 +205,36 @@ export function calcWeeklyStatsOdd(data: ParsedCSV): SeasonalStat[] | null {
 // ==================== 偶数年 ====================
 
 /** 月度效应 - 偶数年 */
-export function calcMonthlyStatsEven(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
-  const evenItems = items.filter(item => item.date.year % 2 === 0);
-  if (evenItems.length < 2) return null;
-  const groups = calcSegmentReturns(evenItems, d => `${d.month}月`);
+export function calcMonthlyStatsEven(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const allItems = precomputed ?? extractItems(data);
+  if (!allItems || allItems.length < 2) return null;
+  const items = allItems.filter(item => item.date.year % 2 === 0);
+  if (items.length < 2) return null;
+  const groups = calcSegmentReturns(items, d => `${d.month}月`);
   return toStats(['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], groups);
 }
 
 /** 季度效应 - 偶数年 */
-export function calcQuarterlyStatsEven(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
-  const evenItems = items.filter(item => item.date.year % 2 === 0);
-  if (evenItems.length < 2) return null;
-  const groups = calcSegmentReturns(evenItems, d => `Q${Math.ceil(d.month / 3)}`);
+export function calcQuarterlyStatsEven(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const allItems = precomputed ?? extractItems(data);
+  if (!allItems || allItems.length < 2) return null;
+  const items = allItems.filter(item => item.date.year % 2 === 0);
+  if (items.length < 2) return null;
+  const groups = calcSegmentReturns(items, d => `Q${Math.ceil(d.month / 3)}`);
   return toStats(['Q1','Q2','Q3','Q4'], groups);
 }
 
 /** 星期效应 - 偶数年 */
-export function calcWeeklyStatsEven(data: ParsedCSV): SeasonalStat[] | null {
-  const items = extractItems(data);
-  if (!items) return null;
-  const evenItems = items.filter(item => item.date.year % 2 === 0);
-  if (evenItems.length < 2) return null;
+export function calcWeeklyStatsEven(data: ParsedCSV, precomputed?: SeasonalItem[]): SeasonalStat[] | null {
+  const allItems = precomputed ?? extractItems(data);
+  if (!allItems || allItems.length < 2) return null;
+  const items = allItems.filter(item => item.date.year % 2 === 0);
+  if (items.length < 2) return null;
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const groups = new Map<string, number[]>();
-  for (let i = 1; i < evenItems.length; i++) {
-    const prev = evenItems[i - 1];
-    const curr = evenItems[i];
+  for (let i = 1; i < items.length; i++) {
+    const prev = items[i - 1];
+    const curr = items[i];
     if (curr.close <= 0 || prev.close <= 0) continue;
     const r = (curr.close - prev.close) / prev.close;
     const key = weekDays[curr.date.weekday];

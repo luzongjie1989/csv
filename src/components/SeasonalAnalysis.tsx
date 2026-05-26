@@ -8,11 +8,15 @@ import {
 } from '@/utils/seasonalStats';
 import YearComparisonChart from '@/components/YearComparisonChart';
 import type { ParsedCSV } from '@/types';
+import type { SeasonalItem } from '@/utils/seasonalStats';
 
 type SubTab = 'month' | 'week' | 'quarter' | 'yearTail';
 type YearFilter = 'all' | 'odd' | 'even';
 
-interface Props { data: ParsedCSV; }
+interface Props { 
+  data: ParsedCSV; 
+  precomputedItems?: SeasonalItem[] | null;
+}
 
 const TABS: { key: SubTab; label: string }[] = [
   { key: 'month', label: '月度效应' },
@@ -21,33 +25,33 @@ const TABS: { key: SubTab; label: string }[] = [
   { key: 'yearTail', label: '年度尾数' },
 ];
 
-export default function SeasonalAnalysis({ data }: Props) {
+export default function SeasonalAnalysis({ data, precomputedItems }: Props) {
   const [tab, setTab] = useState<SubTab>('month');
   const [yearFilter, setYearFilter] = useState<YearFilter>('all');
 
   // 根据 tab 和 yearFilter 计算统计
   const currentStats = useMemo(() => {
+    const items = precomputedItems ?? undefined;
     if (tab === 'yearTail') {
-      // 年度尾数始终显示全部，不受奇偶年影响
-      return calcYearTailStats(data);
+      return calcYearTailStats(data, items);
     }
     if (tab === 'month') {
-      if (yearFilter === 'odd') return calcMonthlyStatsOdd(data);
-      if (yearFilter === 'even') return calcMonthlyStatsEven(data);
-      return calcMonthlyStats(data);
+      if (yearFilter === 'odd') return calcMonthlyStatsOdd(data, items);
+      if (yearFilter === 'even') return calcMonthlyStatsEven(data, items);
+      return calcMonthlyStats(data, items);
     }
     if (tab === 'quarter') {
-      if (yearFilter === 'odd') return calcQuarterlyStatsOdd(data);
-      if (yearFilter === 'even') return calcQuarterlyStatsEven(data);
-      return calcQuarterlyStats(data);
+      if (yearFilter === 'odd') return calcQuarterlyStatsOdd(data, items);
+      if (yearFilter === 'even') return calcQuarterlyStatsEven(data, items);
+      return calcQuarterlyStats(data, items);
     }
     if (tab === 'week') {
-      if (yearFilter === 'odd') return calcWeeklyStatsOdd(data);
-      if (yearFilter === 'even') return calcWeeklyStatsEven(data);
-      return calcWeeklyStats(data);
+      if (yearFilter === 'odd') return calcWeeklyStatsOdd(data, items);
+      if (yearFilter === 'even') return calcWeeklyStatsEven(data, items);
+      return calcWeeklyStats(data, items);
     }
     return null;
-  }, [data, tab, yearFilter]);
+  }, [data, tab, yearFilter, precomputedItems]);
 
   if (!currentStats || currentStats.length === 0) {
     return (

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { BarChart3, Upload, Table2, ScrollText, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import UploadZone from '@/components/UploadZone';
@@ -12,7 +12,7 @@ import PredictionPanel from '@/components/PredictionPanel';
 import SeasonalAnalysis from '@/components/SeasonalAnalysis';
 import DrawdownAnalysis from '@/components/DrawdownAnalysis';
 import { useCSVParser } from '@/hooks/useCSVParser';
-import { computeGanZhiMaps, type GanZhiMaps } from '@/utils/gzCompute';
+import { precomputeAll, type PrecomputedData } from '@/utils/precompute';
 import type { UploadedFile } from '@/types';
 
 type ViewTab = 'preview' | 'classical' | 'seasonal' | 'drawdown';
@@ -24,9 +24,6 @@ export default function App() {
 
   const onFileSelect = useCallback(async (file: File) => {
     setIsUploading(true);
-    setGzMaps(null);
-    setGzLoading(false);
-    setGzProgress(null);
     try {
       const result = await handleFileUpload(file);
       setUploadedFile(result);
@@ -54,55 +51,35 @@ export default function App() {
   const isStockData = uploadedFile?.data?.closeColumn != null;
   const [viewTab, setViewTab] = useState<ViewTab>('preview');
 
-  // 干支/节气延迟计算状态
-  const [gzMaps, setGzMaps] = useState<GanZhiMaps | null>(null);
-  const [gzLoading, setGzLoading] = useState(false);
-  const [gzProgress, setGzProgress] = useState<{ done: number; total: number } | null>(null);
-  const gzComputingRef = useRef(false);
+  // CSV上传完成后自动预计算干支 + 季节性时序
+  const [computed, setComputed] = useState<PrecomputedData | null>(null);
 
-  // 开始延迟计算干支/节气
-  const startGZComputation = useCallback(async () => {
-    if (!uploadedFile?.data || gzMaps || gzComputingRef.current) return;
-    gzComputingRef.current = true;
-    setGzLoading(true);
-    try {
-      const maps = await computeGanZhiMaps(uploadedFile.data, (done, total) => {
-        setGzProgress({ done, total });
-      });
-      setGzMaps(maps);
-    } finally {
-      setGzLoading(false);
-      setGzProgress(null);
-      gzComputingRef.current = false;
+  useEffect(() => {
+    const d = uploadedFile?.data;
+    if (!d?.dateColumn) {
+      setComputed(null);
+      return;
     }
-  }, [uploadedFile?.data, gzMaps]);
+    setComputed(null); // 先清空旧结果
+    precomputeAll(d).then(setComputed);
+  }, [uploadedFile?.data]);
 
-  // 切换标签时触发延迟计算
-  const handleSwitchTab = useCallback((tab: ViewTab) => {
-    setViewTab(tab);
-    if (tab === 'classical') {
-      startGZComputation();
-    }
-  }, [startGZComputation]);
-
-  // 清除时重置干支计算状态
-  const handleClear = useCallback(() => {
-    setUploadedFile(null);
-    setGzMaps(null);
-    setGzLoading(false);
-    setGzProgress(null);
-  }, []);
-
-  // 增强的数据对象（包含计算好的干支/节气映射）
+  // 古典历法增强数据（含干支/节气映射）
   const classicalData = useMemo(() => {
     if (!uploadedFile?.data) return undefined;
-    if (!gzMaps) return uploadedFile.data;
+    if (!computed) return uploadedFile.data;
     return {
       ...uploadedFile.data,
-      ganZhiMap: gzMaps.ganZhiMap,
-      solarTermMap: gzMaps.solarTermMap,
+      ganZhiMap: computed.gzMaps.ganZhiMap,
+      solarTermMap: computed.gzMaps.solarTermMap,
     };
-  }, [uploadedFile?.data, gzMaps]);
+  }, [uploadedFile?.data, computed]);
+
+  // 清除
+  const handleClear = useCallback(() => {
+    setUploadedFile(null);
+    setComputed(null);
+  }, []);
 
   return (
     <div className="min-h-[100dvh] bg-slate-900">
@@ -195,7 +172,7 @@ export default function App() {
                       数据预览
                     </button>
                     <button
-                      onClick={() => handleSwitchTab('classical')}
+                      onClick={() => setViewTab('classical')}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                         viewTab === 'classical'
                           ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
@@ -239,30 +216,13 @@ export default function App() {
                   {/* 古典历法分析标签页 */}
                   {viewTab === 'classical' && (
                     <div className="space-y-8">
-                      {gzLoading && (
-                        <div className="flex flex-col items-center justify-center py-12 gap-4">
-                          <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
-                          <p className="text-slate-400 text-sm">
-                            正在计算干支/节气数据...
-                            {gzProgress && (
-                              <span className="ml-2 text-amber-400">
-                                {gzProgress.done}/{gzProgress.total}
-                              </span>
-                            )}
-                          </p>
-                          <div className="w-64 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-amber-500 rounded-full transition-all duration-300"
-                              style={{
-                                width: gzProgress
-                                  ? `${Math.round((gzProgress.done / gzProgress.total) * 100)}%`
-                                  : '0%',
-                              }}
-                            />
-                          </div>
+                      {!computed && uploadedFile?.data?.dateColumn && (
+                        <div className="flex items-center justify-center py-8 gap-3">
+                          <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+                          <span className="text-slate-400 text-sm">数据计算中...</span>
                         </div>
                       )}
-                      {!gzLoading && classicalData && (
+                      {classicalData && (
                         <>
                           {isStockData && <PredictionPanel data={classicalData} />}
                           <StatisticsPanel data={classicalData} />
@@ -275,7 +235,10 @@ export default function App() {
                   {/* 季节性分析标签页 */}
                   {viewTab === 'seasonal' && (
                     <div className="space-y-8">
-                      <SeasonalAnalysis data={uploadedFile.data} />
+                      <SeasonalAnalysis
+                        data={uploadedFile.data}
+                        precomputedItems={computed?.seasonItems ?? undefined}
+                      />
                     </div>
                   )}
 
