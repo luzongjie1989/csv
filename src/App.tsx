@@ -12,7 +12,7 @@ import PredictionPanel from '@/components/PredictionPanel';
 import SeasonalAnalysis from '@/components/SeasonalAnalysis';
 import DrawdownAnalysis from '@/components/DrawdownAnalysis';
 import { useCSVParser } from '@/hooks/useCSVParser';
-import { precomputeAll, type PrecomputedData } from '@/utils/precompute';
+import { usePrecomputeWorker } from '@/hooks/usePrecomputeWorker';
 import type { UploadedFile } from '@/types';
 
 type ViewTab = 'preview' | 'classical' | 'seasonal' | 'drawdown';
@@ -51,18 +51,17 @@ export default function App() {
   const isStockData = uploadedFile?.data?.closeColumn != null;
   const [viewTab, setViewTab] = useState<ViewTab>('preview');
 
-  // CSV上传完成后自动预计算干支 + 季节性时序
-  const [computed, setComputed] = useState<PrecomputedData | null>(null);
+  // CSV上传完成后自动预计算干支 + 季节性时序（Web Worker 后台线程，不阻塞 UI）
+  const { computed, compute } = usePrecomputeWorker();
 
   useEffect(() => {
     const d = uploadedFile?.data;
-    if (!d?.dateColumn) {
-      setComputed(null);
+    if (!d?.dateColumn || !d?.closeColumn) {
+      compute(null);
       return;
     }
-    setComputed(null); // 先清空旧结果
-    precomputeAll(d).then(setComputed);
-  }, [uploadedFile?.data]);
+    compute({ rows: d.rows, dateColumn: d.dateColumn, closeColumn: d.closeColumn });
+  }, [uploadedFile?.data, compute]);
 
   // 古典历法增强数据（含干支/节气映射）
   const classicalData = useMemo(() => {
@@ -78,8 +77,8 @@ export default function App() {
   // 清除
   const handleClear = useCallback(() => {
     setUploadedFile(null);
-    setComputed(null);
-  }, []);
+    compute(null);
+  }, [compute]);
 
   return (
     <div className="min-h-[100dvh] bg-slate-900">
