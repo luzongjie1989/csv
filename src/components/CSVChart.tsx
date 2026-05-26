@@ -27,7 +27,6 @@ export default function CSVChart({ data, highlightedPatterns = [], onClearPatter
     // 只提取图表需要的列（close + OHLC），不遍历全部header
     const chartColumns = new Set<string>();
     chartColumns.add(closeColumn);
-    const headerLower = headers.map(h => h.toLowerCase());
     const ohlcKeys = ['open', 'high', 'low', '开盘', '最高', '最低'];
     headers.forEach(h => {
       if (ohlcKeys.includes(h.toLowerCase())) chartColumns.add(h);

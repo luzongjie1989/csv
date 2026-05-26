@@ -27,6 +27,9 @@ export function computeGanZhiMaps(
       return;
     }
 
+    // 类型收窄：经过上方检查后 dateColumn 一定非空
+    const dateCol: string = dateColumn;
+
     let index = 0;
     const total = rows.length;
     const CHUNK_SIZE = 100; // 每批处理100行
@@ -34,7 +37,7 @@ export function computeGanZhiMaps(
     function processChunk() {
       const end = Math.min(index + CHUNK_SIZE, total);
       for (let i = index; i < end; i++) {
-        const dateValue = rows[i][dateColumn];
+        const dateValue = rows[i][dateCol];
         if (dateValue) {
           const gz = solarToGanZhi(dateValue);
           if (gz) ganZhiMap.set(i, gz);
