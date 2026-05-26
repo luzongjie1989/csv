@@ -135,7 +135,7 @@ export default function CSVChart({ data, highlightedPatterns = [], onClearPatter
   }, [highlightedPatterns, rawData]);
 
   const handleClear = useCallback(() => {
-    onClearPatterns();
+    onClearPatterns?.();
   }, [onClearPatterns]);
 
   if (rawData.length === 0) return null;

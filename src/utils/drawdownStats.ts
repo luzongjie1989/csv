@@ -86,14 +86,7 @@ export function parseDate(dateStr: string): Date | null {
   return null;
 }
 
-/** 判断跌幅属于哪个区间 */
-function getCategoryIndex(drawdownPct: number): number {
-  const pct = drawdownPct; // 负值
-  for (let i = CATEGORIES.length - 1; i >= 0; i--) {
-    if (pct <= CATEGORIES[i].min) return i;
-  }
-  return 0;
-}
+// getCategoryIndex 已内联到 classifyDrawdowns，不再单独使用
 
 /**
  * 核心算法：识别所有回撤段
